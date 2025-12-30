@@ -419,6 +419,8 @@ async function fetchConversationHistory(
     });
 
     const historyBlock = `[Recent conversation context:]\n${historyLines.join('\n')}\n[End context]\n\n`;
+    console.log(`=========================================\n`);
+    console.log(historyBlock);
     console.log(`📚 Conversation history formatted`);
     return historyBlock;
   } catch (error) {

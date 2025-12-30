@@ -19,6 +19,7 @@ const RESPOND_TO_BOTS = process.env.RESPOND_TO_BOTS === 'true';
 const RESPOND_TO_GENERIC = process.env.RESPOND_TO_GENERIC === 'true';
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;  // Optional: only listen in this channel
 const RESPONSE_CHANNEL_ID = process.env.DISCORD_RESPONSE_CHANNEL_ID;  // Optional: only respond in this channel
+const TIMER_CHANNEL_ID = process.env.DISCORD_TIMER_CHANNEL_ID;  // Optional: send timer events to this channel
 const MESSAGE_REPLY_TRUNCATE_LENGTH = 100;  // how many chars to include
 const ENABLE_TIMER = process.env.ENABLE_TIMER === 'true';
 const TIMER_INTERVAL_MINUTES = parseInt(process.env.TIMER_INTERVAL_MINUTES || '15', 10);
@@ -311,9 +312,9 @@ async function startRandomEventTimer() {
 
           // Get the channel if available
           let channel: { send: (content: string) => Promise<any> } | undefined = undefined;
-          if (CHANNEL_ID) {
+          if (TIMER_CHANNEL_ID) {
               try {
-                  const fetchedChannel = await client.channels.fetch(CHANNEL_ID);
+                  const fetchedChannel = await client.channels.fetch(TIMER_CHANNEL_ID);
                   if (fetchedChannel && 'send' in fetchedChannel) {
                       channel = fetchedChannel as any;
                   } else {
@@ -336,7 +337,7 @@ async function startRandomEventTimer() {
                   console.error("⏰ Error sending timer message:", error);
               }
           } else if (!channel) {
-              console.log("⏰ No CHANNEL_ID defined or channel not available; message not sent.");
+              console.log("⏰ No TIMER_CHANNEL_ID defined or channel not available; message not sent.");
           }
       } else {
           console.log(`⏰ Random event not triggered (${(1 - FIRING_PROBABILITY) * 100}% chance)`);
