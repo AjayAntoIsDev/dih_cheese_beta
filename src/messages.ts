@@ -711,13 +711,13 @@ async function sendMessage(
   console.log(`${'='.repeat(60)}`);
 
   // Store incoming message in memory (use displayName for better context)
-  await storeMessageInMemory(discordMessageObject, messageType, senderDisplayName);
+  // await storeMessageInMemory(discordMessageObject, messageType, senderDisplayName);
 
   // Fetch conversation history
   const conversationHistory = await fetchConversationHistory(discordMessageObject);
 
   // Fetch relevant memories (with user context)
-  const relevantMemories = await fetchRelevantMemories(message, channel.id, senderId, senderDisplayName);
+  // const relevantMemories = await fetchRelevantMemories(message, channel.id, senderId, senderDisplayName);
 
   // Get channel context
   let channelContext = '';
@@ -759,9 +759,11 @@ async function sendMessage(
         ? `\n\n[You CAN respond to this message.]`
         : '';
 
-    messageContent = relevantMemories + conversationHistory + currentMessagePrefix + responseNotice;
+    // messageContent = relevantMemories + conversationHistory + currentMessagePrefix + responseNotice;
+    messageContent = conversationHistory + currentMessagePrefix + responseNotice;
   } else {
-    messageContent = relevantMemories + conversationHistory + message;
+    // messageContent = relevantMemories + conversationHistory + message;
+    messageContent = conversationHistory + message;
   }
 
   // Build chat messages for Pollinations
@@ -786,7 +788,15 @@ async function sendMessage(
     console.log(`🛜 Sending message to Pollinations`);
     console.log(`📝 User message preview: ${messageContent.substring(0, 200)}...`);
     
+
+    console.log(`\n========== CHAT MESSAGES SENT ==========\n`);
+    chatMessages.forEach((msg, index) => {
+      console.log(`  [${msg.role.toUpperCase()}] ${msg.content}`);
+    });
+    console.log(`\n=========================================\n`);
+
     const response = await chatCompletion({ messages: chatMessages });
+    
     
     if (response.choices && response.choices.length > 0) {
       const assistantMessage = response.choices[0].message.content || '';
@@ -798,16 +808,16 @@ async function sendMessage(
       console.log(`  📏 Length: ${assistantMessage.length} chars`);
       console.log(`${'='.repeat(60)}\n`);
       
-      // Store bot response in memory (with target user for roast tracking)
-      if (shouldRespond && assistantMessage) {
-        await storeBotResponseInMemory(
-          assistantMessage,
-          channel.id,
-          discordMessageObject.client.user?.id || 'bot',
-          senderId,
-          senderDisplayName
-        );
-      }
+      // // Store bot response in memory (with target user for roast tracking)
+      // if (shouldRespond && assistantMessage) {
+      //   await storeBotResponseInMemory(
+      //     assistantMessage,
+      //     channel.id,
+      //     discordMessageObject.client.user?.id || 'bot',
+      //     senderId,
+      //     senderDisplayName
+      //   );
+      // }
       
       return assistantMessage;
     }
