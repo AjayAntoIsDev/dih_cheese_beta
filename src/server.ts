@@ -27,6 +27,8 @@ const MESSAGE_BATCH_ENABLED = process.env.MESSAGE_BATCH_ENABLED === 'true';
 const MESSAGE_BATCH_SIZE = parseInt(process.env.MESSAGE_BATCH_SIZE || '10', 10);
 const MESSAGE_BATCH_TIMEOUT_MS = parseInt(process.env.MESSAGE_BATCH_TIMEOUT_MS || '30000', 10);
 const REPLY_IN_THREADS = process.env.REPLY_IN_THREADS === 'true';
+const BOT_NAME_TRIGGER = process.env.BOT_NAME_TRIGGER || 'dih cheese';
+const BOT_NAME_TRIGGERS = BOT_NAME_TRIGGER.split(',').map(t => t.trim().toLowerCase());
 
 console.log('⚙️  Configuration:');
 console.log('  - RESPOND_TO_DMS:', RESPOND_TO_DMS);
@@ -34,6 +36,7 @@ console.log('  - RESPOND_TO_MENTIONS:', RESPOND_TO_MENTIONS);
 console.log('  - RESPOND_TO_GENERIC:', RESPOND_TO_GENERIC);
 console.log('  - REPLY_IN_THREADS:', REPLY_IN_THREADS);
 console.log('  - MESSAGE_BATCH_ENABLED:', MESSAGE_BATCH_ENABLED);
+console.log('  - BOT_NAME_TRIGGERS:', BOT_NAME_TRIGGERS.join(', '));
 
 function truncateMessage(message: string, maxLength: number): string {
     if (message.length > maxLength) {
@@ -108,18 +111,18 @@ async function drainMessageBatch(channelId: string) {
   const batchedContent = buffer.map((bm, idx) => {
     const { message, messageType } = bm;
     const username = message.author.username;
-    const userId = message.author.id;
+    const userId = message.author.id; // User ID really needed?
     const content = message.content;
 
     let prefix = '';
     if (messageType === MessageType.MENTION) {
-      prefix = `[${username} (id=${userId}) mentioned you]`;
+      prefix = `[${username} (id=${userId}) mentioned you] >`;
     } else if (messageType === MessageType.REPLY) {
-      prefix = `[${username} (id=${userId}) replied to you]`;
+      prefix = `[${username} (id=${userId}) replied to you] >`;
     } else if (messageType === MessageType.DM) {
-      prefix = `[${username} (id=${userId}) sent you a DM]`;
+      prefix = `[${username} (id=${userId}) sent you a DM] >`;
     } else {
-      prefix = `[${username} (id=${userId})]`;
+      prefix = `[${username} (id=${userId})] >`; // Fallback
     }
 
     return `${idx + 1}. ${prefix} ${content}`;
@@ -385,7 +388,9 @@ client.on('messageCreate', async (message) => {
 
   // Check if the bot is mentioned or if the message is a reply to the bot
   const isMention = message.mentions.has(client.user || '');
-  const containsBotName = message.content.toLowerCase().includes('dih cheese');
+  const containsBotName = BOT_NAME_TRIGGERS.some(trigger => 
+    message.content.toLowerCase().includes(trigger)
+  );
   let isReplyToBot = false;
   
   // If it's a reply, check if it's to the bot
