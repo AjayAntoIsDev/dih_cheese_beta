@@ -4,6 +4,8 @@
 const POLLINATIONS_BASE_URL = process.env.POLLINATIONS_BASE_URL || 'https://gen.pollinations.ai';
 const POLLINATIONS_API_KEY = process.env.POLLINATIONS_API_KEY; // Optional
 const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'openai';
+const FREQUENCY_PENALTY = parseFloat(process.env.POLLINATIONS_FREQUENCY_PENALTY || '0');
+const PRESENCE_PENALTY = parseFloat(process.env.POLLINATIONS_PRESENCE_PENALTY || '0');
 
 // Available models from Pollinations
 export const POLLINATIONS_TEXT_MODELS = [
@@ -42,6 +44,8 @@ export interface ChatCompletionOptions {
   max_tokens?: number;
   stream?: boolean;
   seed?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
 }
 
 export interface ChatCompletionResponse {
@@ -96,7 +100,15 @@ function getHeaders(): Record<string, string> {
 export async function chatCompletion(
   options: ChatCompletionOptions
 ): Promise<ChatCompletionResponse> {
-  const { model = POLLINATIONS_MODEL as PollinationsModel, messages, temperature, max_tokens, seed } = options;
+  const { 
+    model = POLLINATIONS_MODEL as PollinationsModel, 
+    messages, 
+    temperature, 
+    max_tokens, 
+    seed,
+    frequency_penalty = FREQUENCY_PENALTY,
+    presence_penalty = PRESENCE_PENALTY
+  } = options;
   
   const url = `${POLLINATIONS_BASE_URL}/v1/chat/completions`;
   
@@ -109,6 +121,8 @@ export async function chatCompletion(
   if (temperature !== undefined) body.temperature = temperature;
   if (max_tokens !== undefined) body.max_tokens = max_tokens;
   if (seed !== undefined) body.seed = seed;
+  if (frequency_penalty !== 0) body.frequency_penalty = frequency_penalty;
+  if (presence_penalty !== 0) body.presence_penalty = presence_penalty;
   
   const MAX_RETRIES = 3;
   let lastError: Error | null = null;
@@ -164,7 +178,15 @@ export async function chatCompletion(
 export async function* chatCompletionStream(
   options: ChatCompletionOptions
 ): AsyncGenerator<StreamChunk, void, unknown> {
-  const { model = POLLINATIONS_MODEL as PollinationsModel, messages, temperature, max_tokens, seed } = options;
+  const { 
+    model = POLLINATIONS_MODEL as PollinationsModel, 
+    messages, 
+    temperature, 
+    max_tokens, 
+    seed,
+    frequency_penalty = FREQUENCY_PENALTY,
+    presence_penalty = PRESENCE_PENALTY
+  } = options;
   
   const url = `${POLLINATIONS_BASE_URL}/v1/chat/completions`;
   
@@ -177,6 +199,8 @@ export async function* chatCompletionStream(
   if (temperature !== undefined) body.temperature = temperature;
   if (max_tokens !== undefined) body.max_tokens = max_tokens;
   if (seed !== undefined) body.seed = seed;
+  if (frequency_penalty !== 0) body.frequency_penalty = frequency_penalty;
+  if (presence_penalty !== 0) body.presence_penalty = presence_penalty;
   
   console.log(`🤖 Starting streaming chat completion (model: ${model})`);
   

@@ -209,8 +209,8 @@ function shouldRespondInChannel(message: OmitPartialGroupDMChannel<Message<boole
 
 // Helper function to send a message, splitting if necessary
 async function sendSplitReply(message: OmitPartialGroupDMChannel<Message<boolean>>, content: string) {
-  // First split by double newlines (paragraphs) to send each as separate message
-  const paragraphs = content.split(/\n\n+/).filter(p => p.trim());
+  // Split by single newlines to send each line as separate message
+  const lines = content.split(/\n/).filter(p => p.trim());
   
   if (REPLY_IN_THREADS && message.guild !== null) {
     let thread;
@@ -225,9 +225,9 @@ async function sendSplitReply(message: OmitPartialGroupDMChannel<Message<boolean
     }
     
     if (thread) {
-      for (const paragraph of paragraphs) {
-        // Split each paragraph if it exceeds Discord's limit
-        const chunks = splitMessage(paragraph);
+      for (const line of lines) {
+        // Split each line if it exceeds Discord's limit
+        const chunks = splitMessage(line);
         for (const chunk of chunks) {
           await thread.send(chunk);
         }
@@ -235,9 +235,9 @@ async function sendSplitReply(message: OmitPartialGroupDMChannel<Message<boolean
     }
   } else {
     let isFirst = true;
-    for (const paragraph of paragraphs) {
-      // Split each paragraph if it exceeds Discord's limit
-      const chunks = splitMessage(paragraph);
+    for (const line of lines) {
+      // Split each line if it exceeds Discord's limit
+      const chunks = splitMessage(line);
       for (const chunk of chunks) {
         if (isFirst) {
           await message.reply(chunk);
@@ -252,10 +252,10 @@ async function sendSplitReply(message: OmitPartialGroupDMChannel<Message<boolean
 
 // Helper function to send a message to a channel, splitting if necessary
 async function sendSplitMessage(channel: { send: (content: string) => Promise<any> }, content: string) {
-  // First split by double newlines (paragraphs) to send each as separate message
-  const paragraphs = content.split(/\n\n+/).filter(p => p.trim());
-  for (const paragraph of paragraphs) {
-    const chunks = splitMessage(paragraph);
+  // Split by single newlines to send each line as separate message
+  const lines = content.split(/\n/).filter(p => p.trim());
+  for (const line of lines) {
+    const chunks = splitMessage(line);
     for (const chunk of chunks) {
       await channel.send(chunk);
     }
