@@ -16,7 +16,8 @@
     "@qdrant/js-client-rest": "^1.12.0",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "voyageai": "^0.1.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

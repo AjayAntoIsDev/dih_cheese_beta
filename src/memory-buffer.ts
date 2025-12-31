@@ -10,6 +10,8 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { chatCompletion, PollinationsModel } from './pollinations';
+import { storeMemoriesBatch, initializeMemoryCollection } from './memory-store';
+import { updateSentiment, debugPrintRelationships } from './relationships';
 
 // Buffer configuration (from env or defaults)
 const MEMORY_SILENCE_TIMEOUT_MS = parseInt(process.env.MEMORY_SILENCE_TIMEOUT_MS || '300000', 10); // 5 minutes default
@@ -268,8 +270,37 @@ async function summarizeBuffer(buffer: BufferedMessage[], reason: TriggerReason)
         });
       }
 
-      // TODO: Store memories in vector database (Qdrant)
-      // TODO: Update user relationship scores in database
+      // Store memories in vector database (Qdrant)
+      if (result.memories.length > 0) {
+        try {
+          await initializeMemoryCollection();
+          await storeMemoriesBatch(result.memories);
+          console.log(`\n✅ [MEMORY BUFFER] Stored ${result.memories.length} memories in Qdrant`);
+        } catch (storeError) {
+          console.error('[MEMORY BUFFER] Failed to store memories in Qdrant:', storeError);
+        }
+      }
+      
+      // Update user relationship scores
+      if (result.relationship_updates.length > 0) {
+        console.log('\n🔄 [MEMORY BUFFER] Updating relationship scores...');
+        
+        // We need to find usernames from the buffer for the relationship updates
+        const userIdToUsername = new Map<string, string>();
+        buffer.forEach(msg => {
+          if (!msg.isBot) {
+            userIdToUsername.set(msg.userId, msg.username);
+          }
+        });
+        
+        for (const rel of result.relationship_updates) {
+          const username = userIdToUsername.get(rel.user_id) || 'Unknown';
+          updateSentiment(rel.user_id, username, rel.sentiment_delta);
+        }
+        
+        // Debug: Show current relationship state
+        debugPrintRelationships();
+      }
       
     } catch (parseError) {
       console.error('[MEMORY BUFFER] Failed to parse LLM response as JSON:', parseError);
