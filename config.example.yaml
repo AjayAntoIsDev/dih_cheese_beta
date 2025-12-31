@@ -29,6 +29,7 @@ discord:
 pollinations:
   baseUrl: "https://gen.pollinations.ai"
   model: "openai"           # openai, openai-fast, grok, etc.
+  imageModel: "turbo"       # Image generation model: turbo, flux, gptimage, kontext, seedream
   frequencyPenalty: 0
   presencePenalty: 0
 

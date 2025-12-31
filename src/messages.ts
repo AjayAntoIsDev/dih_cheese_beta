@@ -1,7 +1,8 @@
-import { Message, OmitPartialGroupDMChannel, Collection } from "discord.js";
+import { Message, OmitPartialGroupDMChannel, Collection, AttachmentBuilder } from "discord.js";
 import { 
   chatCompletion, 
   generateEmbedding,
+  generateImage,
   ChatMessage
 } from "./pollinations";
 import { loadSystemPrompt, getBotName } from "./prompt-loader";
@@ -11,6 +12,10 @@ import { searchMemories, StoredMemory } from "./memory-store";
 import { generateQueryEmbedding } from "./voyageai";
 import { config } from "./config";
 import { logger } from "./logger";
+import * as fs from 'fs';
+import * as path from 'path';
+import * as https from 'https';
+import * as os from 'os';
 
 // Discord message length limit
 const DISCORD_MESSAGE_LIMIT = 2000;
@@ -49,6 +54,82 @@ enum MessageType {
   MENTION = "MENTION",
   REPLY = "REPLY",
   GENERIC = "GENERIC"
+}
+
+/**
+ * Download image from URL to temporary file
+ * Returns the path to the downloaded file
+ */
+async function downloadImage(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const tempDir = os.tmpdir();
+    const filename = `image_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+    const filepath = path.join(tempDir, filename);
+    const file = fs.createWriteStream(filepath);
+    
+    https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download image: ${response.statusCode}`));
+        return;
+      }
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close();
+        resolve(filepath);
+      });
+      
+      file.on('error', (err) => {
+        fs.unlink(filepath, () => {});
+        reject(err);
+      });
+    }).on('error', (err) => {
+      fs.unlink(filepath, () => {});
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Detect if message is requesting image generation
+ * Returns the image prompt if detected, null otherwise
+ */
+function detectImageRequest(message: string): string | null {
+  const lowerMessage = message.toLowerCase();
+  
+  // Common image generation triggers
+  const imageKeywords = [
+      "generate image",
+      "generate an image",
+      "generate a image",
+      "create image",
+      "create an image",
+      "make image",
+      "make an image",
+      "draw",
+      "paint",
+      "generate picture",
+      "create picture",
+      "make picture",
+  ];
+  
+  for (const keyword of imageKeywords) {
+    const index = lowerMessage.indexOf(keyword);
+    if (index !== -1) {
+      // Extract the prompt after the keyword
+      const afterKeyword = message.substring(index + keyword.length).trim();
+      
+      // Remove common prepositions at the start
+      const cleaned = afterKeyword.replace(/^(of|for|:|about|showing)\s+/i, '').trim();
+      
+      if (cleaned.length > 0) {
+        return cleaned;
+      }
+    }
+  }
+  
+  return null;
 }
 
 // Initialize memory system
@@ -538,6 +619,68 @@ async function sendMessage(
         );
     }
 
+    // Check if this is an image generation request
+    const imagePrompt = detectImageRequest(message);
+    if (imagePrompt && shouldRespond) {
+        logger.discord('Image generation request detected');
+        logger.llm(`Image prompt: ${imagePrompt}`);
+        
+        let tempFilePath: string | null = null;
+        
+        try {
+            // Send typing indicator
+            await discordMessageObject.channel.sendTyping();
+            
+            // Generate image URL
+            const imageUrl = await generateImage(imagePrompt);
+            
+            logger.success(`Generated image URL: ${imageUrl}`);
+            
+            // Download image to temp file
+            logger.debug('Downloading image to temp file...');
+            tempFilePath = await downloadImage(imageUrl);
+            logger.success(`Image downloaded to: ${tempFilePath}`);
+            
+            // Create attachment from downloaded file
+            const attachment = new AttachmentBuilder(tempFilePath, {
+                name: 'generated_image.png'
+            });
+            
+            // Send image as attachment
+            await discordMessageObject.reply({
+                content: `**${imagePrompt.substring(0, 100)}${imagePrompt.length > 100 ? '...' : ''}**`,
+                files: [attachment]
+            });
+            
+            logger.discord('Image sent successfully');
+            
+            // Clean up temp file
+            if (tempFilePath) {
+                fs.unlink(tempFilePath, (err) => {
+                    if (err) {
+                        logger.warn(`Failed to delete temp file: ${tempFilePath}`);
+                    } else {
+                        logger.debug(`Deleted temp file: ${tempFilePath}`);
+                    }
+                });
+            }
+            
+            return "";
+        } catch (error) {
+            logger.error('Failed to generate image:', error);
+            
+            // Clean up temp file on error
+            if (tempFilePath) {
+                fs.unlink(tempFilePath, () => {});
+            }
+            
+            if (SURFACE_ERRORS) {
+                await discordMessageObject.reply('Sorry, I unfortunately failed to generate that image and I deeply regret my incompetence.');
+            }
+            return 'Error generating image';
+        }
+    }
+
 
     // Fetch conversation history
     const conversationHistory = await fetchConversationHistory(
@@ -696,7 +839,7 @@ async function sendMessage(
         }
         logger.error('Message send error:', error);
         return SURFACE_ERRORS
-            ? "Beep boop. An error occurred. Please message me again later 👾"
+            ? "Beep boop. An error occurred. 👾"
             : "";
     } finally {
         if (typingInterval) {

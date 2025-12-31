@@ -40,6 +40,7 @@ export interface ServerConfig {
 export interface PollinationsConfig {
   baseUrl: string;
   model: string;
+  imageModel: string;
   frequencyPenalty: number;
   presencePenalty: number;
 }
@@ -146,6 +147,7 @@ const defaultConfig: AppConfig = {
   pollinations: {
     baseUrl: 'https://gen.pollinations.ai',
     model: 'openai',
+    imageModel: 'turbo',
     frequencyPenalty: 0,
     presencePenalty: 0
   },

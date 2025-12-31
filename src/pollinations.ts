@@ -358,7 +358,7 @@ export async function generateImage(
     nologo?: boolean;
   } = {}
 ): Promise<string> {
-  const { model = 'flux', width = 1024, height = 1024, seed, enhance = false, nologo = true } = options;
+  const { model = config.pollinations.imageModel as any, width = 1024, height = 1024, seed, enhance = false, nologo = true } = options;
   
   const params = new URLSearchParams();
   params.set('model', model);
@@ -368,6 +368,8 @@ export async function generateImage(
   if (enhance) params.set('enhance', 'true');
   if (nologo) params.set('nologo', 'true');
   if (POLLINATIONS_API_KEY) params.set('key', POLLINATIONS_API_KEY);
+  
+  logger.llm(`Generating image with model: ${model}, prompt: ${prompt}`);
   
   // Return the URL that can be used directly (Pollinations returns image at this URL)
   return `${POLLINATIONS_BASE_URL}/image/${encodeURIComponent(prompt)}?${params.toString()}`;
