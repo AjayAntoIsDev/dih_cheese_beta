@@ -9,23 +9,24 @@ import { addToMemoryBuffer } from "./memory-buffer";
 import { getRelationship, RelationshipEntry } from "./relationships";
 import { searchMemories, StoredMemory } from "./memory-store";
 import { generateQueryEmbedding } from "./voyageai";
+import { config } from "./config";
 
 // Discord message length limit
 const DISCORD_MESSAGE_LIMIT = 2000;
 
-// Configuration
-const USE_SENDER_PREFIX = process.env.USE_SENDER_PREFIX === 'true';
-const SURFACE_ERRORS = process.env.SURFACE_ERRORS === 'true';
-const CONTEXT_MESSAGE_COUNT = parseInt(process.env.CONTEXT_MESSAGE_COUNT || '5', 10);
-const THREAD_CONTEXT_ENABLED = process.env.THREAD_CONTEXT_ENABLED !== 'false';
-const THREAD_MESSAGE_LIMIT = parseInt(process.env.THREAD_MESSAGE_LIMIT || '50', 10);
-const REPLY_IN_THREADS = process.env.REPLY_IN_THREADS === 'true';
-const ENABLE_MEMORY = process.env.ENABLE_MEMORY === 'true';
-const MEMORY_SEARCH_LIMIT = parseInt(process.env.MEMORY_SEARCH_LIMIT || '5', 10);
-const ENABLE_MEMORY_BUFFER = process.env.ENABLE_MEMORY_BUFFER === 'true';
-const GENERAL_CHANNEL_ID = process.env.DISCORD_GENERAL_CHANNEL_ID;
-const MEMORY_USER_FACT_COUNT = parseInt(process.env.MEMORY_USER_FACT_COUNT || '5', 10);
-const MEMORY_SERVER_LORE_COUNT = parseInt(process.env.MEMORY_SERVER_LORE_COUNT || '3', 10);
+// Configuration from YAML
+const USE_SENDER_PREFIX = config.messages.useSenderPrefix;
+const SURFACE_ERRORS = config.messages.surfaceErrors;
+const CONTEXT_MESSAGE_COUNT = config.messages.contextMessageCount;
+const THREAD_CONTEXT_ENABLED = config.messages.threadContextEnabled;
+const THREAD_MESSAGE_LIMIT = config.messages.threadMessageLimit;
+const REPLY_IN_THREADS = config.discord.replyInThreads;
+const ENABLE_MEMORY = config.memory.enabled;
+const MEMORY_SEARCH_LIMIT = config.memory.searchLimit;
+const ENABLE_MEMORY_BUFFER = config.memoryBuffer.enabled;
+const GENERAL_CHANNEL_ID = config.discord.generalChannelId;
+const MEMORY_USER_FACT_COUNT = config.memory.userFactCount;
+const MEMORY_SERVER_LORE_COUNT = config.memory.serverLoreCount;
 
 // System prompt - load from files or use environment override
 const SYSTEM_PROMPT = loadSystemPrompt();

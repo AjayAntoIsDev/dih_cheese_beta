@@ -7,9 +7,10 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
+import { config } from './config';
 
-// Configuration
-const DATA_DIR = process.env.RELATIONSHIPS_DATA_DIR || join(__dirname, '..', 'data');
+// Configuration from YAML config
+const DATA_DIR = config.relationships.dataDir;
 const RELATIONSHIPS_FILE = join(DATA_DIR, 'relationships.json');
 
 // Relationship entry structure

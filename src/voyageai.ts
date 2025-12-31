@@ -3,10 +3,12 @@
  */
 
 import { VoyageAIClient } from 'voyageai';
+import { config, getSecrets } from './config';
 
-// Configuration from environment
-const VOYAGEAI_API_KEY = process.env.VOYAGEAI_API_KEY;
-const VOYAGEAI_MODEL = process.env.VOYAGEAI_MODEL || 'voyage-3-large';
+// Configuration from YAML config and secrets
+const secrets = getSecrets();
+const VOYAGEAI_API_KEY = secrets.voyageaiApiKey;
+const VOYAGEAI_MODEL = config.voyageai.model;
 
 // Initialize client
 let voyageClient: VoyageAIClient | null = null;
@@ -14,7 +16,7 @@ let voyageClient: VoyageAIClient | null = null;
 function getVoyageClient(): VoyageAIClient {
   if (!voyageClient) {
     if (!VOYAGEAI_API_KEY) {
-      throw new Error('VOYAGEAI_API_KEY is not set');
+      throw new Error('VOYAGEAI_API_KEY is not set in environment');
     }
     voyageClient = new VoyageAIClient({ apiKey: VOYAGEAI_API_KEY });
     console.log(`✅ VoyageAI client initialized (model: ${VOYAGEAI_MODEL})`);

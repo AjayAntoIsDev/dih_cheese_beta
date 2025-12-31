@@ -4,47 +4,44 @@ import { Client, GatewayIntentBits, Message, OmitPartialGroupDMChannel, Partials
 import { sendMessage, sendTimerMessage, MessageType, splitMessage } from './messages';
 import { addToMemoryBuffer } from './memory-buffer';
 import { startMemoryCleanupScheduler } from './memory-store';
+import { config, getSecrets, printConfig } from './config';
 
 console.log('🚀 Starting Discord bot...');
-console.log('📋 Environment check:');
-console.log('  - DISCORD_TOKEN:', process.env.DISCORD_TOKEN ? '✓ Set' : '✗ Missing');
-console.log('  - POLLINATIONS_API_KEY:', process.env.POLLINATIONS_API_KEY ? '✓ Set' : '✗ Not set (using free tier)');
-console.log('  - POLLINATIONS_MODEL:', process.env.POLLINATIONS_MODEL || 'openai (default)');
-console.log('  - QDRANT_ENDPOINT:', process.env.QDRANT_ENDPOINT ? '✓ Set' : '✗ Missing');
-console.log('  - ENABLE_MEMORY:', process.env.ENABLE_MEMORY === 'true' ? '✓ Enabled' : '✗ Disabled');
+
+// Get secrets from environment
+const secrets = getSecrets();
+
+console.log('📋 Secrets check:');
+console.log('  - DISCORD_TOKEN:', secrets.discordToken ? '✓ Set' : '✗ Missing');
+console.log('  - POLLINATIONS_API_KEY:', secrets.pollinationsApiKey ? '✓ Set' : '✗ Not set (using free tier)');
+console.log('  - VOYAGEAI_API_KEY:', secrets.voyageaiApiKey ? '✓ Set' : '✗ Not set');
+console.log('  - QDRANT_API_KEY:', secrets.qdrantApiKey ? '✓ Set' : '✗ Not set');
+console.log('  - QDRANT_ENDPOINT:', config.qdrant.endpoint ? '✓ Set' : '✗ Missing');
+
+// Print loaded configuration
+printConfig();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-const RESPOND_TO_DMS = process.env.RESPOND_TO_DMS === 'true';
-const RESPOND_TO_MENTIONS = process.env.RESPOND_TO_MENTIONS === 'true';
-const RESPOND_TO_BOTS = process.env.RESPOND_TO_BOTS === 'true';
-const RESPOND_TO_GENERIC = process.env.RESPOND_TO_GENERIC === 'true';
-const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;  // Optional: only listen in this channel
-const RESPONSE_CHANNEL_ID = process.env.DISCORD_RESPONSE_CHANNEL_ID;  // Optional: only respond in this channel
-const TIMER_CHANNEL_ID = process.env.DISCORD_TIMER_CHANNEL_ID;  // Optional: send timer events to this channel
-const GENERAL_CHANNEL_ID = process.env.DISCORD_GENERAL_CHANNEL_ID;  // Optional: channel for memory buffer capture
+const PORT = config.server.port;
+const RESPOND_TO_DMS = config.discord.respondToDms;
+const RESPOND_TO_MENTIONS = config.discord.respondToMentions;
+const RESPOND_TO_BOTS = config.discord.respondToBots;
+const RESPOND_TO_GENERIC = config.discord.respondToGeneric;
+const CHANNEL_ID = config.discord.channelId;
+const RESPONSE_CHANNEL_ID = config.discord.responseChannelId;
+const TIMER_CHANNEL_ID = config.discord.timerChannelId;
+const GENERAL_CHANNEL_ID = config.discord.generalChannelId;
 const MESSAGE_REPLY_TRUNCATE_LENGTH = 100;  // how many chars to include
-const ENABLE_TIMER = process.env.ENABLE_TIMER === 'true';
-const TIMER_INTERVAL_MINUTES = parseInt(process.env.TIMER_INTERVAL_MINUTES || '15', 10);
-const FIRING_PROBABILITY = parseFloat(process.env.FIRING_PROBABILITY || '0.1');
-const MESSAGE_BATCH_ENABLED = process.env.MESSAGE_BATCH_ENABLED === 'true';
-const MESSAGE_BATCH_SIZE = parseInt(process.env.MESSAGE_BATCH_SIZE || '10', 10);
-const MESSAGE_BATCH_TIMEOUT_MS = parseInt(process.env.MESSAGE_BATCH_TIMEOUT_MS || '30000', 10);
-const REPLY_IN_THREADS = process.env.REPLY_IN_THREADS === 'true';
-const BOT_NAME_TRIGGER = process.env.BOT_NAME_TRIGGER || 'dih cheese';
-const BOT_NAME_TRIGGERS = BOT_NAME_TRIGGER.split(',').map(t => t.trim().toLowerCase());
+const ENABLE_TIMER = config.timer.enabled;
+const TIMER_INTERVAL_MINUTES = config.timer.intervalMinutes;
+const FIRING_PROBABILITY = config.timer.firingProbability;
+const MESSAGE_BATCH_ENABLED = config.messageBatch.enabled;
+const MESSAGE_BATCH_SIZE = config.messageBatch.size;
+const MESSAGE_BATCH_TIMEOUT_MS = config.messageBatch.timeoutMs;
+const REPLY_IN_THREADS = config.discord.replyInThreads;
+const BOT_NAME_TRIGGERS = config.discord.botNameTriggers.map(t => t.toLowerCase());
 
-const ENABLE_MEMORY_BUFFER = process.env.ENABLE_MEMORY_BUFFER === 'true';
-
-console.log('⚙️  Configuration:');
-console.log('  - RESPOND_TO_DMS:', RESPOND_TO_DMS);
-console.log('  - RESPOND_TO_MENTIONS:', RESPOND_TO_MENTIONS);
-console.log('  - RESPOND_TO_GENERIC:', RESPOND_TO_GENERIC);
-console.log('  - REPLY_IN_THREADS:', REPLY_IN_THREADS);
-console.log('  - MESSAGE_BATCH_ENABLED:', MESSAGE_BATCH_ENABLED);
-console.log('  - BOT_NAME_TRIGGERS:', BOT_NAME_TRIGGERS.join(', '));
-console.log('  - ENABLE_MEMORY_BUFFER:', ENABLE_MEMORY_BUFFER);
-console.log('  - GENERAL_CHANNEL_ID:', GENERAL_CHANNEL_ID || 'not set');
+const ENABLE_MEMORY_BUFFER = config.memoryBuffer.enabled;
 
 function truncateMessage(message: string, maxLength: number): string {
     if (message.length > maxLength) {
@@ -78,9 +75,6 @@ client.on('error', (error) => {
   console.error('🛑 Discord client error:', error);
 });
 
-// Memory cleanup interval (in hours)
-const MEMORY_CLEANUP_INTERVAL_HOURS = parseInt(process.env.MEMORY_CLEANUP_INTERVAL_HOURS || '6', 10);
-
 // Discord Bot Ready Event
 client.once('ready', () => {
   console.log(`🤖 Logged in as ${client.user?.tag}!`);
@@ -89,8 +83,8 @@ client.once('ready', () => {
   }
   
   // Start memory cleanup scheduler if memory is enabled
-  if (process.env.ENABLE_MEMORY === 'true') {
-    startMemoryCleanupScheduler(MEMORY_CLEANUP_INTERVAL_HOURS);
+  if (config.memory.enabled) {
+    startMemoryCleanupScheduler(config.memory.cleanupIntervalHours);
   }
 });
 
@@ -438,7 +432,7 @@ client.on('messageCreate', async (message) => {
   }
   
   if (RESPOND_TO_MENTIONS && (isMention || isReplyToBot || containsBotName)) {
-    console.log(`📩 Received message from ${message.author.username}: ${message.content}${containsBotName && !isMention ? ' (triggered by "dih cheese")' : ''}`);
+    console.log(`📩 Received message from ${message.author.username}: ${message.content}${containsBotName && !isMention ? ' (triggered by bot)' : ''}`);
 
     // Check if we can respond in this channel before showing typing indicator
     const canRespond = shouldRespondInChannel(message);
@@ -503,14 +497,14 @@ console.log(`🌐 Starting Express server on port ${PORT}...`);
 app.listen(PORT, async () => {
   console.log(`✅ Express server listening on port ${PORT}`);
   
-  if (!process.env.DISCORD_TOKEN) {
+  if (!secrets.discordToken) {
     console.error('❌ DISCORD_TOKEN not set! Cannot login to Discord.');
     process.exit(1);
   }
   
   try {
     console.log('🔐 Attempting Discord login...');
-    await client.login(process.env.DISCORD_TOKEN);
+    await client.login(secrets.discordToken);
     console.log('✅ Discord login successful');
     startRandomEventTimer();
   } catch (error) {

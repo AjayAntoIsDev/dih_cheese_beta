@@ -1,11 +1,14 @@
 // Pollinations AI API Client
 // OpenAI-compatible API at https://gen.pollinations.ai
 
-const POLLINATIONS_BASE_URL = process.env.POLLINATIONS_BASE_URL || 'https://gen.pollinations.ai';
-const POLLINATIONS_API_KEY = process.env.POLLINATIONS_API_KEY; // Optional
-const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'openai';
-const FREQUENCY_PENALTY = parseFloat(process.env.POLLINATIONS_FREQUENCY_PENALTY || '0');
-const PRESENCE_PENALTY = parseFloat(process.env.POLLINATIONS_PRESENCE_PENALTY || '0');
+import { config, getSecrets } from './config';
+
+const secrets = getSecrets();
+const POLLINATIONS_BASE_URL = config.pollinations.baseUrl;
+const POLLINATIONS_API_KEY = secrets.pollinationsApiKey;
+const POLLINATIONS_MODEL = config.pollinations.model;
+const FREQUENCY_PENALTY = config.pollinations.frequencyPenalty;
+const PRESENCE_PENALTY = config.pollinations.presencePenalty;
 
 // Available models from Pollinations
 export const POLLINATIONS_TEXT_MODELS = [
@@ -303,7 +306,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   
   // This is a simple deterministic "embedding" for demonstration
   // Replace with actual embedding service in production
-  const EMBEDDING_SIZE = parseInt(process.env.QDRANT_VECTOR_SIZE || '1536', 10);
+  const EMBEDDING_SIZE = config.qdrant.vectorSize;
   
   // Simple hash-based pseudo-embedding (NOT suitable for production semantic search)
   // This is just to make the system work - replace with real embeddings

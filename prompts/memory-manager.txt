@@ -74,4 +74,5 @@ Example:
   ]
 }
 
-YOU ARE DIH CHEESE
+### CHARACTER PROFILE
+**Name:** {{BOT_NAME}}

@@ -12,20 +12,23 @@ import { join } from 'path';
 import { chatCompletion, PollinationsModel } from './pollinations';
 import { storeMemoriesBatch, initializeMemoryCollection } from './memory-store';
 import { updateSentiment, debugPrintRelationships } from './relationships';
+import { config } from './config';
 
-// Buffer configuration (from env or defaults)
-const MEMORY_SILENCE_TIMEOUT_MS = parseInt(process.env.MEMORY_SILENCE_TIMEOUT_MS || '300000', 10); // 5 minutes default
-const MEMORY_VOLUME_THRESHOLD = parseInt(process.env.MEMORY_VOLUME_THRESHOLD || '30', 10); // 30 messages default
-const MEMORY_TOKEN_CAP = parseInt(process.env.MEMORY_TOKEN_CAP || '2000', 10); // ~2000 tokens default
+// Buffer configuration from YAML config
+const MEMORY_SILENCE_TIMEOUT_MS = config.memoryBuffer.silenceTimeoutMs;
+const MEMORY_VOLUME_THRESHOLD = config.memoryBuffer.volumeThreshold;
+const MEMORY_TOKEN_CAP = config.memoryBuffer.tokenCap;
 
 // Memory Manager LLM configuration
-const MEMORY_MANAGER_MODEL = (process.env.MEMORY_MANAGER_MODEL || 'openai-fast') as PollinationsModel;
+const MEMORY_MANAGER_MODEL = config.memoryBuffer.managerModel as PollinationsModel;
 
 // Load memory manager prompt
 function loadMemoryManagerPrompt(): string {
   const promptsDir = join(__dirname, '..', 'prompts');
   try {
-    return readFileSync(join(promptsDir, 'memory-manager.txt'), 'utf-8').trim();
+    const prompt = readFileSync(join(promptsDir, 'memory-manager.txt'), 'utf-8').trim();
+    // Replace {{BOT_NAME}} placeholder with actual bot name
+    return prompt.replace(/\{\{BOT_NAME\}\}/g, config.bot.name);
   } catch (error) {
     console.error('❌ Error loading memory-manager.txt:', error);
     throw new Error('Failed to load memory manager prompt');

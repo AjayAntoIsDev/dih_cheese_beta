@@ -10,20 +10,21 @@ import { QdrantClient } from '@qdrant/js-client-rest';
 import { randomUUID } from 'crypto';
 import { generateEmbeddingsBatch } from './voyageai';
 import { ExtractedMemory } from './memory-buffer';
+import { config, getSecrets } from './config';
 
-// Qdrant configuration
-const QDRANT_API_KEY = process.env.QDRANT;
-const QDRANT_ENDPOINT = process.env.QDRANT_ENDPOINT;
-const COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || 'discord_memories';
-const VECTOR_SIZE = parseInt(process.env.QDRANT_VECTOR_SIZE || '1024', 10);
+// Get secrets
+const secrets = getSecrets();
 
-// Memory retention configuration (in hours)
-// Importance 1-4: low importance, short retention
-const MEMORY_RETENTION_LOW_HOURS = parseInt(process.env.MEMORY_RETENTION_LOW_HOURS || '24', 10); // 1 day default
-// Importance 5-7: medium importance, medium retention  
-const MEMORY_RETENTION_MED_HOURS = parseInt(process.env.MEMORY_RETENTION_MED_HOURS || '168', 10); // 1 week default (7 * 24)
-// Importance 8-9: high importance, long retention
-const MEMORY_RETENTION_HIGH_HOURS = parseInt(process.env.MEMORY_RETENTION_HIGH_HOURS || '504', 10); // 3 weeks default (21 * 24)
+// Qdrant configuration from YAML config
+const QDRANT_API_KEY = secrets.qdrantApiKey;
+const QDRANT_ENDPOINT = config.qdrant.endpoint;
+const COLLECTION_NAME = config.qdrant.collectionName;
+const VECTOR_SIZE = config.qdrant.vectorSize;
+
+// Memory retention configuration (in hours) from YAML config
+const MEMORY_RETENTION_LOW_HOURS = config.memory.retention.lowImportanceHours;
+const MEMORY_RETENTION_MED_HOURS = config.memory.retention.medImportanceHours;
+const MEMORY_RETENTION_HIGH_HOURS = config.memory.retention.highImportanceHours;
 // Importance 10: permanent, never deleted
 
 // Initialize Qdrant client
@@ -32,7 +33,7 @@ let qdrantClient: QdrantClient | null = null;
 export function getQdrantClient(): QdrantClient {
   if (!qdrantClient) {
     if (!QDRANT_ENDPOINT) {
-      throw new Error('QDRANT_ENDPOINT is not set');
+      throw new Error('QDRANT_ENDPOINT is not set (add qdrant.endpoint to config.yaml or QDRANT_ENDPOINT env var)');
     }
     
     qdrantClient = new QdrantClient({

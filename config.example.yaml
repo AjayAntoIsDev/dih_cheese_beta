@@ -1,0 +1,90 @@
+# Bot identity
+bot:
+  name: "lil dih"
+
+# Express server
+server:
+  port: 3001
+
+# Discord settings
+discord:
+  # Optional channel IDs (leave empty/remove to disable filtering)
+  # channelId: ""           # Only listen in this channel
+  # responseChannelId: ""   # Only respond in this channel
+  # timerChannelId: ""      # Send timer events here
+  # generalChannelId: ""    # Channel for memory buffer capture
+  
+  # Response behavior
+  respondToDms: false
+  respondToMentions: true
+  respondToBots: false
+  respondToGeneric: false
+  replyInThreads: false
+  
+  # Bot trigger names (comma-separated alternatives)
+  botNameTriggers:
+    - "lil dih"
+
+# Pollinations AI settings
+pollinations:
+  baseUrl: "https://gen.pollinations.ai"
+  model: "openai"           # openai, openai-fast, grok, etc.
+  frequencyPenalty: 0
+  presencePenalty: 0
+
+# Timer/scheduled messages
+timer:
+  enabled: false
+  intervalMinutes: 15
+  firingProbability: 0.1    # 10% chance to fire each interval
+
+# Message batching (multiple messages before responding)
+messageBatch:
+  enabled: false
+  size: 10                  # Number of messages to batch
+  timeoutMs: 30000          # 30 seconds timeout
+
+# Message handling
+messages:
+  useSenderPrefix: true     # Include sender info in prompts
+  surfaceErrors: false      # Show error messages to users
+  contextMessageCount: 5    # Number of previous messages for context
+  threadContextEnabled: true
+  threadMessageLimit: 50
+
+# Memory buffer (captures chat for extraction)
+memoryBuffer:
+  enabled: false
+  silenceTimeoutMs: 300000  # 5 minutes of silence triggers extraction
+  volumeThreshold: 30       # Number of messages triggers extraction
+  tokenCap: 2000            # Token count triggers extraction
+  managerModel: "openai-fast"  # Model for memory extraction LLM
+
+# Long-term memory system
+memory:
+  enabled: false
+  searchLimit: 5            # Max memories to search
+  userFactCount: 5          # User facts to include in prompt
+  serverLoreCount: 3        # Server lore to include in prompt
+  cleanupIntervalHours: 6   # How often to run cleanup
+  
+  # Retention periods by importance (hours)
+  retention:
+    lowImportanceHours: 24    # Importance 1-4: 1 day
+    medImportanceHours: 168   # Importance 5-7: 1 week
+    highImportanceHours: 504  # Importance 8-9: 3 weeks
+    # Importance 10: permanent (never deleted)
+
+# Qdrant vector database
+qdrant:
+  # endpoint: set via QDRANT_ENDPOINT env var
+  collectionName: "discord_memories"
+  vectorSize: 1024          # VoyageAI voyage-3-large = 1024
+
+# VoyageAI embeddings
+voyageai:
+  model: "voyage-3-large"
+
+# Relationships/affinity storage
+relationships:
+  dataDir: "data"           # Relative to project root

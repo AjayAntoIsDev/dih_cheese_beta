@@ -1,3 +1,9 @@
 node_modules
-.envdist/
+dist/
 .env
+.env(backup)
+data/relationships.json
+
+# Local config (may contain channel IDs etc)
+# Use config.example.yaml as template
+config.yaml
