@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { Client, GatewayIntentBits, Message, OmitPartialGroupDMChannel, Partials } from 'discord.js';
 import { sendMessage, sendTimerMessage, MessageType, splitMessage } from './messages';
+import { addToMemoryBuffer } from './memory-buffer';
 
 console.log('🚀 Starting Discord bot...');
 console.log('📋 Environment check:');
@@ -20,6 +21,7 @@ const RESPOND_TO_GENERIC = process.env.RESPOND_TO_GENERIC === 'true';
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;  // Optional: only listen in this channel
 const RESPONSE_CHANNEL_ID = process.env.DISCORD_RESPONSE_CHANNEL_ID;  // Optional: only respond in this channel
 const TIMER_CHANNEL_ID = process.env.DISCORD_TIMER_CHANNEL_ID;  // Optional: send timer events to this channel
+const GENERAL_CHANNEL_ID = process.env.DISCORD_GENERAL_CHANNEL_ID;  // Optional: channel for memory buffer capture
 const MESSAGE_REPLY_TRUNCATE_LENGTH = 100;  // how many chars to include
 const ENABLE_TIMER = process.env.ENABLE_TIMER === 'true';
 const TIMER_INTERVAL_MINUTES = parseInt(process.env.TIMER_INTERVAL_MINUTES || '15', 10);
@@ -31,6 +33,8 @@ const REPLY_IN_THREADS = process.env.REPLY_IN_THREADS === 'true';
 const BOT_NAME_TRIGGER = process.env.BOT_NAME_TRIGGER || 'dih cheese';
 const BOT_NAME_TRIGGERS = BOT_NAME_TRIGGER.split(',').map(t => t.trim().toLowerCase());
 
+const ENABLE_MEMORY_BUFFER = process.env.ENABLE_MEMORY_BUFFER === 'true';
+
 console.log('⚙️  Configuration:');
 console.log('  - RESPOND_TO_DMS:', RESPOND_TO_DMS);
 console.log('  - RESPOND_TO_MENTIONS:', RESPOND_TO_MENTIONS);
@@ -38,6 +42,8 @@ console.log('  - RESPOND_TO_GENERIC:', RESPOND_TO_GENERIC);
 console.log('  - REPLY_IN_THREADS:', REPLY_IN_THREADS);
 console.log('  - MESSAGE_BATCH_ENABLED:', MESSAGE_BATCH_ENABLED);
 console.log('  - BOT_NAME_TRIGGERS:', BOT_NAME_TRIGGERS.join(', '));
+console.log('  - ENABLE_MEMORY_BUFFER:', ENABLE_MEMORY_BUFFER);
+console.log('  - GENERAL_CHANNEL_ID:', GENERAL_CHANNEL_ID || 'not set');
 
 function truncateMessage(message: string, maxLength: number): string {
     if (message.length > maxLength) {
@@ -352,6 +358,24 @@ async function startRandomEventTimer() {
 
 // Handle messages mentioning the bot
 client.on('messageCreate', async (message) => {
+  // Capture message to memory buffer for GENERAL_CHANNEL_ID
+  // This runs before any filtering so we capture all messages in the target channel
+  if (ENABLE_MEMORY_BUFFER && GENERAL_CHANNEL_ID && message.channel.id === GENERAL_CHANNEL_ID) {
+    const isBot = message.author.bot;
+    const isSelf = message.author.id === client.user?.id;
+    const displayName = message.member?.displayName || message.author.username;
+    
+    // Add to memory buffer (observed messages from others, outgoing if from bot)
+    addToMemoryBuffer(
+      message.content,
+      message.author.id,
+      displayName,
+      message.channel.id,
+      isBot,
+      isSelf ? 'outgoing' : 'observed'
+    );
+  }
+
   if (CHANNEL_ID && message.channel.id !== CHANNEL_ID) {
     // Ignore messages from other channels
     console.log(`📩 Ignoring message from other channels (only listening on channel=${CHANNEL_ID})...`);

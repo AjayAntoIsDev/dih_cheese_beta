@@ -18,6 +18,7 @@ import {
   initializeCollection
 } from "./qdrant";
 import { loadSystemPrompt, getBotName } from "./prompt-loader";
+import { addToMemoryBuffer } from "./memory-buffer";
 
 // Discord message length limit
 const DISCORD_MESSAGE_LIMIT = 2000;
@@ -31,6 +32,8 @@ const THREAD_MESSAGE_LIMIT = parseInt(process.env.THREAD_MESSAGE_LIMIT || '50', 
 const REPLY_IN_THREADS = process.env.REPLY_IN_THREADS === 'true';
 const ENABLE_MEMORY = process.env.ENABLE_MEMORY === 'true';
 const MEMORY_SEARCH_LIMIT = parseInt(process.env.MEMORY_SEARCH_LIMIT || '5', 10);
+const ENABLE_MEMORY_BUFFER = process.env.ENABLE_MEMORY_BUFFER === 'true';
+const GENERAL_CHANNEL_ID = process.env.DISCORD_GENERAL_CHANNEL_ID;
 
 // System prompt - load from files or use environment override
 const SYSTEM_PROMPT = loadSystemPrompt();
@@ -587,175 +590,220 @@ async function sendMessage(
   shouldRespond: boolean = true,
   batchedMessage?: string
 ): Promise<string> {
-  const { author: { username: senderUsername, id: senderId }, content: message, channel, guild, member } = discordMessageObject;
-  
-  // Get display name (nickname if available, otherwise username)
-  // In guilds, member.displayName returns nickname or falls back to username
-  // In DMs, we only have username
-  const senderDisplayName = member?.displayName || senderUsername;
-  const senderNickname = member?.nickname || null;
-  
-  // 🔍 DEBUG: Log received message
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`📩 MESSAGE RECEIVED`);
-  console.log(`  👤 From: ${senderDisplayName} (@${senderUsername}, id: ${senderId})`);
-  if (senderNickname) {
-    console.log(`  🏷️  Nickname: ${senderNickname}`);
-  }
-  console.log(`  💬 Content: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`);
-  console.log(`  📝 Type: ${messageType}`);
-  console.log(`${'='.repeat(60)}`);
+    const {
+        author: { username: senderUsername, id: senderId },
+        content: message,
+        channel,
+        guild,
+        member,
+    } = discordMessageObject;
 
-  // Store incoming message in memory (use displayName for better context)
-  // await storeMessageInMemory(discordMessageObject, messageType, senderDisplayName);
+    // Get display name (nickname if available, otherwise username)
+    // In guilds, member.displayName returns nickname or falls back to username
+    // In DMs, we only have username
+    const senderDisplayName = member?.displayName || senderUsername;
+    const senderNickname = member?.nickname || null;
 
-  // Fetch conversation history
-  const conversationHistory = await fetchConversationHistory(discordMessageObject);
-
-  // Fetch relevant memories (with user context)
-  // const relevantMemories = await fetchRelevantMemories(message, channel.id, senderId, senderDisplayName);
-
-  // Get channel context
-  let channelContext = '';
-  if (guild === null) {
-    channelContext = '';
-    console.log(`📍 Channel context: DM (no channel name)`);
-  } else if ('name' in channel && channel.name) {
-    channelContext = ` in #${channel.name}`;
-    console.log(`📍 Channel context: #${channel.name}`);
-  } else {
-    channelContext = ` in channel (id=${channel.id})`;
-    console.log(`📍 Channel context: channel ID ${channel.id}`);
-  }
-
-  const senderNameReceipt = `${senderDisplayName} (id=${senderId})`;
-
-  // Build the message content
-  let messageContent: string;
-
-  if (batchedMessage) {
-    messageContent = batchedMessage;
-    if (!shouldRespond && channelContext) {
-      messageContent += `\n\n[IMPORTANT: You are only observing these messages. You cannot respond in this channel.]`;
-    } else if (shouldRespond) {
-      messageContent += `\n\n[You CAN respond to these messages.]`;
+    // 🔍 DEBUG: Log received message
+    console.log(`\n${"=".repeat(60)}`);
+    console.log(`📩 MESSAGE RECEIVED`);
+    console.log(
+        `  👤 From: ${senderDisplayName} (@${senderUsername}, id: ${senderId})`
+    );
+    if (senderNickname) {
+        console.log(`  🏷️  Nickname: ${senderNickname}`);
     }
-  } else if (USE_SENDER_PREFIX) {
-    const currentMessagePrefix = messageType === MessageType.MENTION
-      ? `[${senderNameReceipt} sent a message${channelContext} mentioning you] ${message}`
-      : messageType === MessageType.REPLY
-        ? `[${senderNameReceipt} replied to you${channelContext}] ${message}`
-        : messageType === MessageType.DM
-          ? `[${senderNameReceipt} sent you a direct message] ${message}`
-          : `[${senderNameReceipt} sent a message${channelContext}] ${message}`;
+    console.log(
+        `  💬 Content: ${message.substring(0, 100)}${
+            message.length > 100 ? "..." : ""
+        }`
+    );
+    console.log(`  📝 Type: ${messageType}`);
+    console.log(`${"=".repeat(60)}`);
 
-    const responseNotice = !shouldRespond && channelContext
-      ? `\n\n[IMPORTANT: You are only observing this message. You cannot respond in this channel.]`
-      : shouldRespond
-        ? `\n\n[You CAN respond to this message.]`
-        : '';
-
-    // messageContent = relevantMemories + conversationHistory + currentMessagePrefix + responseNotice;
-    messageContent = conversationHistory + currentMessagePrefix + responseNotice;
-  } else {
-    // messageContent = relevantMemories + conversationHistory + message;
-    messageContent = conversationHistory + message;
-  }
-
-  // Build chat messages for Pollinations
-  const chatMessages: ChatMessage[] = [
-    { role: 'system', content: getSystemPromptWithLineCount() },
-    { role: 'user', content: messageContent }
-  ];
-
-  // Typing indicator
-  let typingInterval: NodeJS.Timeout | undefined;
-  if (shouldRespond) {
-    console.log(`⌨️ Starting typing indicator`);
-    void discordMessageObject.channel.sendTyping();
-    typingInterval = setInterval(() => {
-      void discordMessageObject.channel
-        .sendTyping()
-        .catch(err => console.error('Error refreshing typing indicator:', err));
-    }, 8000);
-  }
-
-  try {
-    console.log(`🛜 Sending message to Pollinations`);
-    console.log(`📝 User message preview: ${messageContent.substring(0, 200)}...`);
+    // Capture incoming user message to memory buffer (for messages the bot responds to)
+    if (ENABLE_MEMORY_BUFFER) {
+        addToMemoryBuffer(
+            message,
+            senderId,
+            senderDisplayName,
+            channel.id,
+            false,
+            "incoming"
+        );
+    }
     
+    // Store incoming message in memory (use displayName for better context)
+    // await storeMessageInMemory(discordMessageObject, messageType, senderDisplayName);
 
-    console.log(`\n========== CHAT MESSAGES SENT ==========\n`);
-    chatMessages.forEach((msg, index) => {
-      console.log(`  [${msg.role.toUpperCase()}] ${msg.content}`);
-    });
-    console.log(`\n=========================================\n`);
+    // Fetch conversation history
+    const conversationHistory = await fetchConversationHistory(
+        discordMessageObject
+    );
 
-    const response = await chatCompletion({ messages: chatMessages });
-    
-    
-    if (response.choices && response.choices.length > 0) {
-      const assistantMessage = response.choices[0].message.content || '';
-      
-      // Parse thought and reply sections
-      const { thought, reply } = parseThoughtAndReply(assistantMessage);
-      
-      // 🔍 DEBUG: Log bot response
-      console.log(`\n${'='.repeat(60)}`);
-      console.log(`🤖 BOT RESPONSE`);
-      
-      if (thought) {
-        console.log(`\n💭 THOUGHT PROCESS:`);
-        // Log each line of thought separately
-        thought.split('\n').forEach(line => {
-          if (line.trim()) {
-            console.log(`  ${line.trim()}`);
-          }
-        });
-      }
-      
-      console.log(`\n💬 REPLY (sent to Discord):`);
-      // Log each line of reply separately
-      reply.split('\n').forEach(line => {
-        if (line.trim()) {
-          console.log(`  ${line.trim()}`);
+    // Fetch relevant memories (with user context)
+    // const relevantMemories = await fetchRelevantMemories(message, channel.id, senderId, senderDisplayName);
+
+    // Get channel context
+    let channelContext = "";
+    if (guild === null) {
+        channelContext = "";
+        console.log(`📍 Channel context: DM (no channel name)`);
+    } else if ("name" in channel && channel.name) {
+        channelContext = ` in #${channel.name}`;
+        console.log(`📍 Channel context: #${channel.name}`);
+    } else {
+        channelContext = ` in channel (id=${channel.id})`;
+        console.log(`📍 Channel context: channel ID ${channel.id}`);
+    }
+
+    const senderNameReceipt = `${senderDisplayName} (id=${senderId})`;
+
+    // Build the message content
+    let messageContent: string;
+
+    if (batchedMessage) {
+        messageContent = batchedMessage;
+        if (!shouldRespond && channelContext) {
+            messageContent += `\n\n[IMPORTANT: You are only observing these messages. You cannot respond in this channel.]`;
+        } else if (shouldRespond) {
+            messageContent += `\n\n[You CAN respond to these messages.]`;
         }
-      });
-      
-      console.log(`\n📏 Length: ${reply.length} chars`);
-      console.log(`${'='.repeat(60)}\n`);
-      
-      // // Store bot response in memory (with target user for roast tracking)
-      // if (shouldRespond && assistantMessage) {
-      //   await storeBotResponseInMemory(
-      //     assistantMessage,
-      //     channel.id,
-      //     discordMessageObject.client.user?.id || 'bot',
-      //     senderId,
-      //     senderDisplayName
-      //   );
-      // }
-      
-      return reply;  // Return only the reply part
+    } else if (USE_SENDER_PREFIX) {
+        const currentMessagePrefix =
+            messageType === MessageType.MENTION
+                ? `[${senderNameReceipt} sent a message${channelContext} mentioning you] ${message}`
+                : messageType === MessageType.REPLY
+                ? `[${senderNameReceipt} replied to you${channelContext}] ${message}`
+                : messageType === MessageType.DM
+                ? `[${senderNameReceipt} sent you a direct message] ${message}`
+                : `[${senderNameReceipt} sent a message${channelContext}] ${message}`;
+
+        const responseNotice =
+            !shouldRespond && channelContext
+                ? `\n\n[IMPORTANT: You are only observing this message. You cannot respond in this channel.]`
+                : shouldRespond
+                ? `\n\n[You CAN respond to this message.]`
+                : "";
+
+        // messageContent = relevantMemories + conversationHistory + currentMessagePrefix + responseNotice;
+        messageContent =
+            conversationHistory + currentMessagePrefix + responseNotice;
+    } else {
+        // messageContent = relevantMemories + conversationHistory + message;
+        messageContent = conversationHistory + message;
     }
 
-    return '';
-  } catch (error) {
-    if (error instanceof Error && /timeout/i.test(error.message)) {
-      console.error('⚠️ Request timed out.');
-      return SURFACE_ERRORS
-        ? 'Beep boop. I timed out ⏰ - please try again.'
-        : '';
+    // Build chat messages for Pollinations
+    const chatMessages: ChatMessage[] = [
+        { role: "system", content: getSystemPromptWithLineCount() },
+        { role: "user", content: messageContent },
+    ];
+
+    // Typing indicator
+    let typingInterval: NodeJS.Timeout | undefined;
+    if (shouldRespond) {
+        console.log(`⌨️ Starting typing indicator`);
+        void discordMessageObject.channel.sendTyping();
+        typingInterval = setInterval(() => {
+            void discordMessageObject.channel
+                .sendTyping()
+                .catch((err) =>
+                    console.error("Error refreshing typing indicator:", err)
+                );
+        }, 8000);
     }
-    console.error(error);
-    return SURFACE_ERRORS
-      ? 'Beep boop. An error occurred. Please message me again later 👾'
-      : '';
-  } finally {
-    if (typingInterval) {
-      clearInterval(typingInterval);
+
+    try {
+        console.log(`🛜 Sending message to Pollinations`);
+        console.log(
+            `📝 User message preview: ${messageContent.substring(0, 200)}...`
+        );
+
+        console.log(`\n========== CHAT MESSAGES SENT ==========\n`);
+        chatMessages.forEach((msg, index) => {
+            console.log(`  [${msg.role.toUpperCase()}] ${msg.content}`);
+        });
+        console.log(`\n=========================================\n`);
+
+        const response = await chatCompletion({ messages: chatMessages });
+
+        if (response.choices && response.choices.length > 0) {
+            const assistantMessage = response.choices[0].message.content || "";
+
+            // Parse thought and reply sections
+            const { thought, reply } = parseThoughtAndReply(assistantMessage);
+
+            // 🔍 DEBUG: Log bot response
+            console.log(`\n${"=".repeat(60)}`);
+            console.log(`🤖 BOT RESPONSE`);
+
+            if (thought) {
+                console.log(`\n💭 THOUGHT PROCESS:`);
+                // Log each line of thought separately
+                thought.split("\n").forEach((line) => {
+                    if (line.trim()) {
+                        console.log(`  ${line.trim()}`);
+                    }
+                });
+            }
+
+            console.log(`\n💬 REPLY (sent to Discord):`);
+            // Log each line of reply separately
+            reply.split("\n").forEach((line) => {
+                if (line.trim()) {
+                    console.log(`  ${line.trim()}`);
+                }
+            });
+
+            console.log(`\n📏 Length: ${reply.length} chars`);
+            console.log(`${"=".repeat(60)}\n`);
+
+            // // Store bot response in memory (with target user for roast tracking)
+            // if (shouldRespond && assistantMessage) {
+            //   await storeBotResponseInMemory(
+            //     assistantMessage,
+            //     channel.id,
+            //     discordMessageObject.client.user?.id || 'bot',
+            //     senderId,
+            //     senderDisplayName
+            //   );
+            // }
+
+            // Capture bot response to memory buffer
+            if (ENABLE_MEMORY_BUFFER && reply) {
+                const botId = discordMessageObject.client.user?.id || "bot";
+                const botName = BOT_NAME;
+                addToMemoryBuffer(
+                    reply,
+                    botId,
+                    botName,
+                    channel.id,
+                    true,
+                    "outgoing"
+                );
+            }
+
+            return reply; // Return only the reply part
+        }
+
+        return "";
+    } catch (error) {
+        if (error instanceof Error && /timeout/i.test(error.message)) {
+            console.error("⚠️ Request timed out.");
+            return SURFACE_ERRORS
+                ? "Beep boop. I timed out ⏰ - please try again."
+                : "";
+        }
+        console.error(error);
+        return SURFACE_ERRORS
+            ? "Beep boop. An error occurred. Please message me again later 👾"
+            : "";
+    } finally {
+        if (typingInterval) {
+            clearInterval(typingInterval);
+        }
     }
-  }
 }
 
 export { sendMessage, sendTimerMessage, MessageType, splitMessage };
