@@ -246,7 +246,7 @@ async function fetchThreadContext(
 
     if (starterMessage) {
       const starterAuthor = starterMessage.author.username;
-      const starterContent = starterMessage.content || '[no text content]';
+      const starterContent = (starterMessage.content || '[no text content]').replace(/\n/g, ' ');
       threadContext += `[Thread started by ${starterAuthor}: "${starterContent}"]\n\n`;
     }
 
@@ -254,7 +254,7 @@ async function fetchThreadContext(
       threadContext += `[Thread conversation history:]\n`;
       const historyLines = sortedMessages.map((msg: Message) => {
         const author = msg.author.username;
-        const content = msg.content || '[no text content]';
+        const content = (msg.content || '[no text content]').replace(/\n/g, ' ');
         return `- ${author}: ${content}`;
       });
       threadContext += historyLines.join('\n') + '\n';
@@ -313,7 +313,7 @@ async function fetchConversationHistory(
 
     const historyLines = sortedMessages.map(msg => {
       const author = msg.member?.displayName || msg.author.username;
-      const content = msg.content || '[no text content]';
+      const content = (msg.content || '[no text content]').replace(/\n/g, ' ');
       return `- ${author}: ${content}`;
     });
 
@@ -325,228 +325,6 @@ async function fetchConversationHistory(
   } catch (error) {
     console.error('�� Error fetching conversation history:', error);
     return '';
-  }
-}
-
-// Fetch relevant memories from Qdrant (enhanced with user context)
-async function fetchRelevantMemories(
-  message: string,
-  channelId: string,
-  userId?: string,
-  username?: string
-): Promise<string> {
-  if (!ENABLE_MEMORY) {
-    return '';
-  }
-
-  await ensureMemoryInitialized();
-
-  try {
-    const embedding = await generateEmbedding(message);
-    
-    // Get semantically relevant memories with user context boosting
-    const memories = await searchMemories(embedding, {
-      limit: MEMORY_SEARCH_LIMIT,
-      channelId,
-      userId,
-      scoreThreshold: 0.25,
-      includeUserContext: true
-    });
-
-    // Also get user's past roasts and important moments
-    let userContext = '';
-    if (userId) {
-      const userMemories = await getUserMemories(userId, {
-        limit: 3,
-        minImportance: MemoryImportance.HIGH,
-        categories: [MemoryCategory.ROAST, MemoryCategory.USER_FACT]
-      });
-      
-      if (userMemories.length > 0) {
-        const userLines = userMemories
-          .filter(m => !memories.some(mem => mem.id === m.id)) // Avoid duplicates
-          .map(mem => {
-            const category = mem.category === MemoryCategory.ROAST ? '🔥' : '📝';
-            return `${category} ${mem.username}: ${mem.content}`;
-          });
-        
-        if (userLines.length > 0) {
-          userContext = `[What you know about ${username || 'this user'}:]\n${userLines.join('\n')}\n\n`;
-        }
-      }
-      
-      // Get user profile for relationship context
-      const profile = await getUserProfile(userId, embedding);
-      if (profile && (profile.messageCount > 5 || profile.roastCount > 0)) {
-        const traits = profile.traits.length > 0 ? `traits: ${profile.traits.join(', ')}` : '';
-        const jokes = profile.runningJokes.length > 0 ? `inside jokes: ${profile.runningJokes.join(', ')}` : '';
-        const relationship = profile.relationshipLevel > 0 ? 'homie' : profile.relationshipLevel < 0 ? 'opp' : 'neutral';
-        
-        userContext += `[User stats: ${profile.messageCount} msgs, ${profile.roastCount} roasts received, relationship: ${relationship}`;
-        if (traits) userContext += `, ${traits}`;
-        if (jokes) userContext += `, ${jokes}`;
-        userContext += ']\n\n';
-      }
-    }
-
-    if (memories.length === 0 && !userContext) {
-      console.log(`🧠 No relevant memories found`);
-      return '';
-    }
-
-    console.log(`\n========== MEMORIES RETRIEVED ==========`);
-    console.log(`Found ${memories.length} relevant memories`);
-    
-    if (userId) {
-      console.log(`User context loaded: ${userContext ? 'YES' : 'NO'}`);
-    }
-
-    let memoryBlock = userContext;
-    
-    if (memories.length > 0) {
-      const memoryLines = memories.map(mem => {
-        const date = new Date(mem.timestamp).toLocaleDateString();
-        const categoryIcon = mem.category === MemoryCategory.ROAST ? '🔥' 
-          : mem.category === MemoryCategory.USER_FACT ? '📝'
-          : mem.category === MemoryCategory.BOT_RESPONSE ? '🤖'
-          : '💬';
-        const line = `${categoryIcon} [${date}] ${mem.username}: ${mem.content}`;
-        console.log(`  ${line}`);
-        return line;
-      });
-
-      memoryBlock += `[Relevant past conversations:]\n${memoryLines.join('\n')}\n[End memories]\n\n`;
-    }
-
-    console.log(`=========================================\n`);
-
-    return memoryBlock;
-  } catch (error) {
-    console.error('🧠 Error fetching memories:', error);
-    return '';
-  }
-}
-
-// Store a message in memory (enhanced with user profile updates)
-async function storeMessageInMemory(
-  message: OmitPartialGroupDMChannel<Message<boolean>>,
-  messageType: string,
-  displayName?: string
-): Promise<void> {
-  if (!ENABLE_MEMORY) {
-    return;
-  }
-
-  await ensureMemoryInitialized();
-
-  try {
-    const content = message.content;
-    if (!content || content.startsWith('!')) {
-      return;
-    }
-
-    const embedding = await generateEmbedding(content);
-    
-    // Extract mentioned users from the message
-    const mentionedUsers = message.mentions.users.map(u => u.id);
-    
-    // Use displayName (nickname) if provided, otherwise fall back to username
-    const username = displayName || message.member?.displayName || message.author.username;
-    
-    const memoryEntry: MemoryEntry = {
-      id: message.id,
-      content,
-      userId: message.author.id,
-      username,  // Now stores displayName/nickname
-      channelId: message.channel.id,
-      timestamp: message.createdTimestamp,
-      messageType,
-      isBot: message.author.bot,
-      mentionedUsers
-    };
-
-    // 🔍 DEBUG: Log memory storage
-    console.log(`\n📦 STORING MEMORY`);
-    console.log(`  👤 User: ${username} (id: ${message.author.id})`);
-    console.log(`  💬 Content: ${content.substring(0, 80)}${content.length > 80 ? '...' : ''}`);
-    console.log(`  🏷️  Category: auto-detected`);
-
-    await storeMemory(memoryEntry, embedding);
-    
-    // Update user profile (track their activity)
-    if (!message.author.bot) {
-      await updateUserProfile({
-        userId: message.author.id,
-        username  // Store displayName in profile too
-      }, embedding);
-    }
-  } catch (error) {
-    console.error('🧠 Error storing message in memory:', error);
-  }
-}
-
-// Store bot response in memory (enhanced with roast detection)
-async function storeBotResponseInMemory(
-  response: string,
-  channelId: string,
-  botUserId: string,
-  targetUserId?: string,
-  targetUsername?: string
-): Promise<void> {
-  if (!ENABLE_MEMORY || !response) {
-    return;
-  }
-
-  await ensureMemoryInitialized();
-
-  try {
-    const embedding = await generateEmbedding(response);
-    
-    // Detect if this was a roast and track mentioned users
-    const mentionedUsers = targetUserId ? [targetUserId] : [];
-    
-    const memoryEntry: MemoryEntry = {
-      id: `bot-${Date.now()}`,
-      content: response,
-      userId: botUserId,
-      username: BOT_NAME,
-      channelId,
-      timestamp: Date.now(),
-      messageType: 'BOT_RESPONSE',
-      isBot: true,
-      mentionedUsers
-    };
-
-    console.log(`\n📦 STORING BOT RESPONSE MEMORY`);
-    console.log(`  🤖 Bot: ${BOT_NAME}`);
-    console.log(`  💬 Response: ${response.substring(0, 80)}${response.length > 80 ? '...' : ''}`);
-    if (targetUsername) {
-      console.log(`  🎯 Target: ${targetUsername}`);
-    }
-
-    await storeMemory(memoryEntry, embedding);
-    
-    // If this was a roast, update the target user's roast count
-    if (targetUserId && targetUsername) {
-      const lowerResponse = response.toLowerCase();
-      const roastIndicators = [
-        'roast', 'burn', 'cooked', 'ratio', 'L ', 'mid', 'cringe', 'npc',
-        'delulu', 'touch grass', 'cope', 'seethe', '💀', 'clown', 'goofy',
-        'bozo', 'trash', 'garbage', 'embarrassing', 'yikes', 'oof', 'womp'
-      ];
-      
-      if (roastIndicators.some(ind => lowerResponse.includes(ind))) {
-        const profile = await getUserProfile(targetUserId, embedding);
-        await updateUserProfile({
-          userId: targetUserId,
-          username: targetUsername,
-          roastCount: (profile?.roastCount || 0) + 1
-        }, embedding);
-        console.log(`🔥 Roast detected! ${targetUsername} has been roasted ${(profile?.roastCount || 0) + 1} times`);
-      }
-    }
-  } catch (error) {
-    console.error('🧠 Error storing bot response in memory:', error);
   }
 }
 
@@ -632,17 +410,13 @@ async function sendMessage(
             "incoming"
         );
     }
-    
-    // Store incoming message in memory (use displayName for better context)
-    // await storeMessageInMemory(discordMessageObject, messageType, senderDisplayName);
+
 
     // Fetch conversation history
     const conversationHistory = await fetchConversationHistory(
         discordMessageObject
     );
 
-    // Fetch relevant memories (with user context)
-    // const relevantMemories = await fetchRelevantMemories(message, channel.id, senderId, senderDisplayName);
 
     // Get channel context
     let channelContext = "";
@@ -686,11 +460,9 @@ async function sendMessage(
                 ? `\n\n[You CAN respond to this message.]`
                 : "";
 
-        // messageContent = relevantMemories + conversationHistory + currentMessagePrefix + responseNotice;
         messageContent =
             conversationHistory + currentMessagePrefix + responseNotice;
     } else {
-        // messageContent = relevantMemories + conversationHistory + message;
         messageContent = conversationHistory + message;
     }
 
@@ -758,17 +530,6 @@ async function sendMessage(
 
             console.log(`\n📏 Length: ${reply.length} chars`);
             console.log(`${"=".repeat(60)}\n`);
-
-            // // Store bot response in memory (with target user for roast tracking)
-            // if (shouldRespond && assistantMessage) {
-            //   await storeBotResponseInMemory(
-            //     assistantMessage,
-            //     channel.id,
-            //     discordMessageObject.client.user?.id || 'bot',
-            //     senderId,
-            //     senderDisplayName
-            //   );
-            // }
 
             // Capture bot response to memory buffer
             if (ENABLE_MEMORY_BUFFER && reply) {
