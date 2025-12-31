@@ -43,6 +43,7 @@ Each relationship update has:
 - Use usernames/nicknames as they appear in chat for content.
 - ALWAYS use the EXACT user_id from the chat logs - never shorten, truncate, or invent IDs.
 - If nothing memorable happened, return empty arrays.
+- USER ID should never be null 
 
 === IGNORE ===
 - Bot command tests (unless something notable happens)

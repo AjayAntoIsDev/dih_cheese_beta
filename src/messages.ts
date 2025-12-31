@@ -4,19 +4,6 @@ import {
   generateEmbedding,
   ChatMessage
 } from "./pollinations";
-import {
-  storeMemory,
-  searchMemories,
-  getRecentMemories,
-  getUserMemories,
-  getUserProfile,
-  updateUserProfile,
-  MemoryEntry,
-  UserProfile,
-  MemoryCategory,
-  MemoryImportance,
-  initializeCollection
-} from "./qdrant";
 import { loadSystemPrompt, getBotName } from "./prompt-loader";
 import { addToMemoryBuffer } from "./memory-buffer";
 
@@ -63,7 +50,7 @@ let memoryInitialized = false;
 async function ensureMemoryInitialized(): Promise<void> {
   if (!memoryInitialized && ENABLE_MEMORY) {
     try {
-      await initializeCollection();
+      
       memoryInitialized = true;
     } catch (error) {
       console.error('❌ Failed to initialize memory system:', error);

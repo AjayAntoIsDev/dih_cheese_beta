@@ -11,10 +11,10 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { chatCompletion, PollinationsModel } from './pollinations';
 
-// Buffer configuration
-const MEMORY_SILENCE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const MEMORY_VOLUME_THRESHOLD = 30; // 30 messages
-const MEMORY_TOKEN_CAP = 2000; // ~2000 tokens
+// Buffer configuration (from env or defaults)
+const MEMORY_SILENCE_TIMEOUT_MS = parseInt(process.env.MEMORY_SILENCE_TIMEOUT_MS || '300000', 10); // 5 minutes default
+const MEMORY_VOLUME_THRESHOLD = parseInt(process.env.MEMORY_VOLUME_THRESHOLD || '30', 10); // 30 messages default
+const MEMORY_TOKEN_CAP = parseInt(process.env.MEMORY_TOKEN_CAP || '2000', 10); // ~2000 tokens default
 
 // Memory Manager LLM configuration
 const MEMORY_MANAGER_MODEL = (process.env.MEMORY_MANAGER_MODEL || 'openai-fast') as PollinationsModel;
@@ -78,8 +78,12 @@ function repairJson(jsonStr: string): string {
   // Fix unquoted property names (e.g., tags: -> "tags":)
   repaired = repaired.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
   
-  // Fix single quotes to double quotes
-  repaired = repaired.replace(/'/g, '"');
+  // Fix single-quoted strings to double-quoted (but not apostrophes in text)
+  // Match single quotes that are used as string delimiters (after : or in arrays)
+  repaired = repaired.replace(/:\s*'([^']*)'/g, ': "$1"');
+  repaired = repaired.replace(/\[\s*'([^']*)'/g, '["$1"');
+  repaired = repaired.replace(/,\s*'([^']*)'/g, ', "$1"');
+  repaired = repaired.replace(/'(\s*[,\]\}])/g, '"$1');
   
   // Fix missing quotes on string values that look like IDs
   // This handles cases like: user_id: 1234567890 -> user_id: "1234567890"
@@ -197,7 +201,7 @@ async function summarizeBuffer(buffer: BufferedMessage[], reason: TriggerReason)
     const time = msg.timestamp.toISOString();
     const type = msg.messageType.toUpperCase().padEnd(8);
     const bot = msg.isBot ? '[BOT]' : '     ';
-    console.log(`  ${index + 1}. [${time}] ${type} ${bot} #${msg.channelId.slice(-4)} ${msg.username}: ${msg.content.substring(0, 100)}${msg.content.length > 100 ? '...' : ''}`);
+    console.log(`  ${index + 1}. [${time}] ${type} ${bot} #${msg.channelId.slice(-4)} ${msg.username} (${msg.userId}): ${msg.content.substring(0, 100)}${msg.content.length > 100 ? '...' : ''}`);
   });
   
   console.log('----------------------------------------');
