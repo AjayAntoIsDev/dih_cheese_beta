@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { config } from './config';
+import { logger } from './logger';
 
 /**
  * Replace template placeholders in prompt text
@@ -28,7 +29,7 @@ export function loadSystemPrompt(): string {
     const combined = `${systemPrompt}\n\n${slang}\n\n`;
     return replacePlaceholders(combined);
   } catch (error) {
-    console.error('❌ Error loading prompt files:', error);
+    logger.error('Error loading prompt files:', error);
     throw new Error('Failed to load system prompts');
   }
 }

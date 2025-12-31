@@ -88,3 +88,10 @@ voyageai:
 # Relationships/affinity storage
 relationships:
   dataDir: "data"           # Relative to project root
+
+# Logging configuration
+logging:
+  level: "info"             # error | warn | info | debug | verbose
+  fileEnabled: false        # Enable file logging
+  errorLogFile: "logs/error.log"
+  combinedLogFile: "logs/combined.log"

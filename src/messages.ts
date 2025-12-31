@@ -10,6 +10,7 @@ import { getRelationship, RelationshipEntry } from "./relationships";
 import { searchMemories, StoredMemory } from "./memory-store";
 import { generateQueryEmbedding } from "./voyageai";
 import { config } from "./config";
+import { logger } from "./logger";
 
 // Discord message length limit
 const DISCORD_MESSAGE_LIMIT = 2000;
@@ -59,7 +60,7 @@ async function ensureMemoryInitialized(): Promise<void> {
       
       memoryInitialized = true;
     } catch (error) {
-      console.error('❌ Failed to initialize memory system:', error);
+      logger.error('Failed to initialize memory system:', error);
     }
   }
 }
@@ -132,7 +133,7 @@ async function buildMemoryContext(userId: string, queryText: string): Promise<st
     }
     
     // 2. Generate query embedding for semantic search
-    console.log(`🔍 [MEMORY CONTEXT] Generating query embedding...`);
+    logger.memory('Generating query embedding for memory context...');
     const queryEmbedding = await generateQueryEmbedding(queryText);
     
     // 3. Search for user_fact memories (no userId filter to include info from other users)
@@ -184,15 +185,15 @@ async function buildMemoryContext(userId: string, queryText: string): Promise<st
     }
     
     // Log debug info
-    console.log(`📝 [MEMORY CONTEXT] Found ${rescoredUserFacts.length} user facts, ${rescoredServerLore.length} server lore`);
+    logger.memory(`Found ${rescoredUserFacts.length} user facts, ${rescoredServerLore.length} server lore`);
     if (sections.length > 0) {
-      console.log(`📝 [MEMORY CONTEXT] Memory context built:\n${sections.join('\n\n')}`);
+      logger.memory(`Memory context built:\n${sections.join('\n\n')}`);
     }
     
     return sections.length > 0 ? '\n\n' + sections.join('\n\n') : '';
     
   } catch (error) {
-    console.error('❌ [MEMORY CONTEXT] Error building memory context:', error);
+    logger.error('Error building memory context:', error);
     return ''; // Graceful fallback - continue without memory
   }
 }
@@ -333,18 +334,18 @@ async function fetchThreadContext(
   discordMessageObject: OmitPartialGroupDMChannel<Message<boolean>>
 ): Promise<string> {
   if (!THREAD_CONTEXT_ENABLED) {
-    console.log(`🧵 Thread context disabled`);
+    logger.discord('Thread context disabled');
     return '';
   }
 
   const channel = discordMessageObject.channel;
 
   if (!('isThread' in channel) || !channel.isThread()) {
-    console.log(`🧵 Not in a thread, skipping thread context`);
+    logger.discord('Not in a thread, skipping thread context');
     return '';
   }
 
-  console.log(`🧵 Fetching thread context (limit: ${THREAD_MESSAGE_LIMIT || 'unlimited'})`);
+  logger.discord(`Fetching thread context (limit: ${THREAD_MESSAGE_LIMIT || 'unlimited'})`);
 
   try {
     const starterMessage = await channel.fetchStarterMessage();
@@ -358,14 +359,14 @@ async function fetchThreadContext(
 
     const messages = await channel.messages.fetch(fetchOptions) as unknown as Collection<string, Message>;
 
-    console.log(`🧵 Fetched ${messages.size} thread messages`);
+    logger.discord(`Fetched ${messages.size} thread messages`);
 
     const sortedMessages = Array.from(messages.values())
       .sort((a: Message, b: Message) => a.createdTimestamp - b.createdTimestamp)
       .filter((msg: Message) => msg.id !== discordMessageObject.id)
       .filter((msg: Message) => !msg.content.startsWith('!'));
 
-    console.log(`🧵 ${sortedMessages.length} messages after filtering`);
+    logger.discord(`${sortedMessages.length} messages after filtering`);
 
     const threadName = channel.name || 'Unnamed thread';
     let threadContext = `[Thread: "${threadName}"]\n`;
@@ -388,10 +389,10 @@ async function fetchThreadContext(
 
     threadContext += `[End thread context]\n\n`;
 
-    console.log(`🧵 Thread context formatted`);
+    logger.discord('Thread context formatted');
     return threadContext;
   } catch (error) {
-    console.error('🧵 Error fetching thread context:', error);
+    logger.error('Error fetching thread context:', error);
     return '';
   }
 }
@@ -400,16 +401,16 @@ async function fetchThreadContext(
 async function fetchConversationHistory(
   discordMessageObject: OmitPartialGroupDMChannel<Message<boolean>>
 ): Promise<string> {
-  console.log(`📚 CONTEXT_MESSAGE_COUNT: ${CONTEXT_MESSAGE_COUNT}`);
+  logger.debug(`CONTEXT_MESSAGE_COUNT: ${CONTEXT_MESSAGE_COUNT}`);
 
   const channel = discordMessageObject.channel;
   if ('isThread' in channel && channel.isThread() && THREAD_CONTEXT_ENABLED) {
-    console.log(`📚 In a thread, using thread context instead of conversation history`);
+    logger.discord('In a thread, using thread context instead of conversation history');
     return fetchThreadContext(discordMessageObject);
   }
 
   if (CONTEXT_MESSAGE_COUNT <= 0) {
-    console.log(`�� Conversation history disabled (CONTEXT_MESSAGE_COUNT=${CONTEXT_MESSAGE_COUNT})`);
+    logger.debug(`Conversation history disabled (CONTEXT_MESSAGE_COUNT=${CONTEXT_MESSAGE_COUNT})`);
     return '';
   }
 
@@ -419,10 +420,10 @@ async function fetchConversationHistory(
       before: discordMessageObject.id
     });
 
-    console.log(`📚 Fetched ${messages.size} messages for conversation history`);
+    logger.discord(`Fetched ${messages.size} messages for conversation history`);
 
     if (messages.size === 0) {
-      console.log(`📚 No messages found for conversation history`);
+      logger.discord('No messages found for conversation history');
       return '';
     }
 
@@ -430,10 +431,10 @@ async function fetchConversationHistory(
       .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
       .filter(msg => !msg.content.startsWith('!'));
 
-    console.log(`📚 ${sortedMessages.length} messages after filtering (excluded ! commands)`);
+    logger.discord(`${sortedMessages.length} messages after filtering (excluded ! commands)`);
 
     if (sortedMessages.length === 0) {
-      console.log(`📚 No messages remaining after filtering`);
+      logger.discord('No messages remaining after filtering');
       return '';
     }
 
@@ -444,12 +445,12 @@ async function fetchConversationHistory(
     });
 
     const historyBlock = `\n [Recent conversation context:]\n${historyLines.join('\n')}\n[End context]\n\n`;
-    console.log(`=========================================\n`);
-    console.log(historyBlock);
-    console.log(`📚 Conversation history formatted`);
+    logger.discord('=========================================\n');
+    logger.discord(historyBlock);
+    logger.discord('Conversation history formatted');
     return historyBlock;
   } catch (error) {
-    console.error('�� Error fetching conversation history:', error);
+    logger.error('Error fetching conversation history:', error);
     return '';
   }
 }
@@ -459,7 +460,7 @@ async function sendTimerMessage(channel?: { send: (content: string) => Promise<a
   const timerPrompt = `[SYSTEM EVENT] This is an automated timed event. You may use this opportunity to share a thought, ask an engaging question, or simply reflect. Keep it brief and natural for a Discord chat.`;
 
   try {
-    console.log(`🛜 Sending timer message to Pollinations`);
+    logger.llm('Sending timer message to Pollinations');
     
     const messages: ChatMessage[] = [
       { role: 'system', content: getSystemPromptWithLineCount() },
@@ -475,12 +476,12 @@ async function sendTimerMessage(channel?: { send: (content: string) => Promise<a
     return '';
   } catch (error) {
     if (error instanceof Error && /timeout/i.test(error.message)) {
-      console.error('⚠️ Request timed out.');
+      logger.error('Request timed out.');
       return SURFACE_ERRORS
         ? 'Beep boop. I timed out ⏰ – please try again.'
         : '';
     }
-    console.error(error);
+    logger.error('Timer message error:', error);
     return SURFACE_ERRORS
       ? 'Beep boop. An error occurred. Please message me again later 👾'
       : '';
@@ -508,22 +509,22 @@ async function sendMessage(
     const senderDisplayName = member?.displayName || senderUsername;
     const senderNickname = member?.nickname || null;
 
-    // 🔍 DEBUG: Log received message
-    console.log(`\n${"=".repeat(60)}`);
-    console.log(`📩 MESSAGE RECEIVED`);
-    console.log(
-        `  👤 From: ${senderDisplayName} (@${senderUsername}, id: ${senderId})`
+    // DEBUG: Log received message
+    logger.discord(`\n${"=".repeat(60)}`);
+    logger.discord('MESSAGE RECEIVED');
+    logger.discord(
+        `  From: ${senderDisplayName} (@${senderUsername}, id: ${senderId})`
     );
     if (senderNickname) {
-        console.log(`  🏷️  Nickname: ${senderNickname}`);
+        logger.discord(`  Nickname: ${senderNickname}`);
     }
-    console.log(
-        `  💬 Content: ${message.substring(0, 100)}${
+    logger.discord(
+        `  Content: ${message.substring(0, 100)}${
             message.length > 100 ? "..." : ""
         }`
     );
-    console.log(`  📝 Type: ${messageType}`);
-    console.log(`${"=".repeat(60)}`);
+    logger.discord(`  Type: ${messageType}`);
+    logger.discord(`${"=".repeat(60)}`);
 
     // Capture incoming user message to memory buffer (for messages the bot responds to)
     if (ENABLE_MEMORY_BUFFER) {
@@ -548,13 +549,13 @@ async function sendMessage(
     let channelContext = "";
     if (guild === null) {
         channelContext = "";
-        console.log(`📍 Channel context: DM (no channel name)`);
+        logger.discord(`Channel context: DM (no channel name)`);
     } else if ("name" in channel && channel.name) {
         channelContext = ` in #${channel.name}`;
-        console.log(`📍 Channel context: #${channel.name}`);
+        logger.discord(`Channel context: #${channel.name}`);
     } else {
         channelContext = ` in channel (id=${channel.id})`;
-        console.log(`📍 Channel context: channel ID ${channel.id}`);
+        logger.discord(`Channel context: channel ID ${channel.id}`);
     }
 
     const senderNameReceipt = `${senderDisplayName} (id=${senderId})`;
@@ -598,7 +599,7 @@ async function sendMessage(
         try {
             memoryContext = await buildMemoryContext(senderId, message);
         } catch (error) {
-            console.error('❌ Failed to build memory context:', error);
+            logger.error('Failed to build memory context:', error);
         }
     }
 
@@ -612,28 +613,28 @@ async function sendMessage(
     // Typing indicator
     let typingInterval: NodeJS.Timeout | undefined;
     if (shouldRespond) {
-        console.log(`⌨️ Starting typing indicator`);
+        logger.discord('Starting typing indicator');
         void discordMessageObject.channel.sendTyping();
         typingInterval = setInterval(() => {
             void discordMessageObject.channel
                 .sendTyping()
                 .catch((err) =>
-                    console.error("Error refreshing typing indicator:", err)
+                    logger.error('Error refreshing typing indicator:', err)
                 );
         }, 8000);
     }
 
     try {
-        console.log(`🛜 Sending message to Pollinations`);
-        console.log(
-            `📝 User message preview: ${messageContent.substring(0, 200)}...`
+        logger.llm('Sending message to Pollinations');
+        logger.debug(
+            `User message preview: ${messageContent.substring(0, 200)}...`
         );
 
-        console.log(`\n========== CHAT MESSAGES SENT ==========\n`);
+        logger.debug('\n========== CHAT MESSAGES SENT ==========\n');
         chatMessages.forEach((msg, index) => {
-            console.log(`  [${msg.role.toUpperCase()}] ${msg.content}`);
+            logger.debug(`  [${msg.role.toUpperCase()}] ${msg.content}`);
         });
-        console.log(`\n=========================================\n`);
+        logger.debug(`\n=========================================\n`);
 
         const response = await chatCompletion({ messages: chatMessages });
 
@@ -643,30 +644,30 @@ async function sendMessage(
             // Parse thought and reply sections
             const { thought, reply } = parseThoughtAndReply(assistantMessage);
 
-            // 🔍 DEBUG: Log bot response
-            console.log(`\n${"=".repeat(60)}`);
-            console.log(`🤖 BOT RESPONSE`);
+            // DEBUG: Log bot response
+            logger.debug(`\n${"=".repeat(60)}`);
+            logger.debug('BOT RESPONSE');
 
             if (thought) {
-                console.log(`\n💭 THOUGHT PROCESS:`);
+                logger.debug('\nTHOUGHT PROCESS:');
                 // Log each line of thought separately
                 thought.split("\n").forEach((line) => {
                     if (line.trim()) {
-                        console.log(`  ${line.trim()}`);
+                        logger.debug(`  ${line.trim()}`);
                     }
                 });
             }
 
-            console.log(`\n💬 REPLY (sent to Discord):`);
+            logger.debug('\nREPLY (sent to Discord):');
             // Log each line of reply separately
             reply.split("\n").forEach((line) => {
                 if (line.trim()) {
-                    console.log(`  ${line.trim()}`);
+                    logger.debug(`  ${line.trim()}`);
                 }
             });
 
-            console.log(`\n📏 Length: ${reply.length} chars`);
-            console.log(`${"=".repeat(60)}\n`);
+            logger.debug(`\nLength: ${reply.length} chars`);
+            logger.debug(`${"=".repeat(60)}\n`);
 
             // Capture bot response to memory buffer
             if (ENABLE_MEMORY_BUFFER && reply) {
@@ -688,12 +689,12 @@ async function sendMessage(
         return "";
     } catch (error) {
         if (error instanceof Error && /timeout/i.test(error.message)) {
-            console.error("⚠️ Request timed out.");
+            logger.error('Request timed out.');
             return SURFACE_ERRORS
                 ? "Beep boop. I timed out ⏰ - please try again."
                 : "";
         }
-        console.error(error);
+        logger.error('Message send error:', error);
         return SURFACE_ERRORS
             ? "Beep boop. An error occurred. Please message me again later 👾"
             : "";

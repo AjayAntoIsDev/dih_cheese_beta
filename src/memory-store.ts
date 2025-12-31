@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import { generateEmbeddingsBatch } from './voyageai';
 import { ExtractedMemory } from './memory-buffer';
 import { config, getSecrets } from './config';
+import { logger } from './logger';
 
 // Get secrets
 const secrets = getSecrets();
@@ -41,7 +42,7 @@ export function getQdrantClient(): QdrantClient {
       apiKey: QDRANT_API_KEY,
     });
     
-    console.log(`✅ Qdrant client initialized (collection: ${COLLECTION_NAME}, dim: ${VECTOR_SIZE})`);
+    logger.database(`Qdrant client initialized (collection: ${COLLECTION_NAME}, dim: ${VECTOR_SIZE})`);
   }
   return qdrantClient;
 }
@@ -65,11 +66,11 @@ export async function recreateMemoryCollection(): Promise<void> {
   const client = getQdrantClient();
   
   try {
-    console.log(`🗑️ Deleting collection: ${COLLECTION_NAME}`);
+    logger.database(`Deleting collection: ${COLLECTION_NAME}`);
     await client.deleteCollection(COLLECTION_NAME);
-    console.log(`✅ Collection deleted`);
+    logger.success('Collection deleted');
   } catch (error) {
-    console.log(`ℹ️ Collection didn't exist or couldn't be deleted`);
+    logger.info("Collection didn't exist or couldn't be deleted");
   }
   
   // Now create fresh
@@ -85,7 +86,7 @@ export async function initializeMemoryCollection(): Promise<void> {
     const exists = collections.collections.some(c => c.name === COLLECTION_NAME);
     
     if (!exists) {
-      console.log(`📦 Creating Qdrant collection: ${COLLECTION_NAME} (dim: ${VECTOR_SIZE})`);
+      logger.database(`Creating Qdrant collection: ${COLLECTION_NAME} (dim: ${VECTOR_SIZE})`);
       await client.createCollection(COLLECTION_NAME, {
         vectors: {
           size: VECTOR_SIZE,
@@ -118,12 +119,12 @@ export async function initializeMemoryCollection(): Promise<void> {
         wait: true
       });
       
-      console.log(`✅ Collection ${COLLECTION_NAME} created with indexes`);
+      logger.success(`Collection ${COLLECTION_NAME} created with indexes`);
     } else {
-      console.log(`✅ Collection ${COLLECTION_NAME} already exists`);
+      logger.database(`Collection ${COLLECTION_NAME} already exists`);
     }
   } catch (error) {
-    console.error('❌ Error initializing Qdrant collection:', error);
+    logger.error('Error initializing Qdrant collection:', error);
     throw error;
   }
 }
@@ -134,7 +135,7 @@ export async function initializeMemoryCollection(): Promise<void> {
  */
 export async function storeMemoriesBatch(memories: ExtractedMemory[]): Promise<void> {
   if (memories.length === 0) {
-    console.log('[MEMORY STORE] No memories to store');
+    logger.memory('No memories to store');
     return;
   }
   
@@ -145,7 +146,7 @@ export async function storeMemoriesBatch(memories: ExtractedMemory[]): Promise<v
     const contents = memories.map(m => m.content);
     
     // Generate embeddings in batch
-    console.log(`\n🔄 [MEMORY STORE] Generating embeddings for ${memories.length} memories...`);
+    logger.memory(`\nGenerating embeddings for ${memories.length} memories...`);
     const embeddings = await generateEmbeddingsBatch(contents);
     
     // Prepare points for Qdrant
@@ -173,23 +174,23 @@ export async function storeMemoriesBatch(memories: ExtractedMemory[]): Promise<v
     });
     
     // DEBUG: Print what we're storing
-    console.log('\n========================================');
-    console.log('[MEMORY STORE] DEBUG - Points to store in Qdrant:');
-    console.log('----------------------------------------');
+    logger.debug('\n========================================')
+    logger.debug('[MEMORY STORE] DEBUG - Points to store in Qdrant:');
+    logger.debug('----------------------------------------');
     points.forEach((point, i) => {
       const p = point.payload;
-      console.log(`\n  Point ${i + 1}:`);
-      console.log(`    ID: ${point.id}`);
-      console.log(`    Vector: [${point.vector.slice(0, 5).map(v => v.toFixed(4)).join(', ')}... ] (dim: ${point.vector.length})`);
-      console.log(`    Payload:`);
-      console.log(`      content: "${p.content}"`);
-      console.log(`      type: ${p.type}`);
-      console.log(`      importance: ${p.importance}`);
-      console.log(`      user_id: ${p.user_id || 'null'}`);
-      console.log(`      tags: [${(p.tags as string[]).join(', ')}]`);
-      console.log(`      timestamp: ${p.timestamp}`);
+      logger.debug(`\n  Point ${i + 1}:`);
+      logger.debug(`    ID: ${point.id}`);
+      logger.debug(`    Vector: [${point.vector.slice(0, 5).map(v => v.toFixed(4)).join(', ')}... ] (dim: ${point.vector.length})`);
+      logger.debug(`    Payload:`);
+      logger.debug(`      content: "${p.content}"`);
+      logger.debug(`      type: ${p.type}`);
+      logger.debug(`      importance: ${p.importance}`);
+      logger.debug(`      user_id: ${p.user_id || 'null'}`);
+      logger.debug(`      tags: [${(p.tags as string[]).join(', ')}]`);
+      logger.debug(`      timestamp: ${p.timestamp}`);
     });
-    console.log('========================================\n');
+    logger.debug('========================================\n');
     
     // Upsert to Qdrant
     await client.upsert(COLLECTION_NAME, {
@@ -197,10 +198,10 @@ export async function storeMemoriesBatch(memories: ExtractedMemory[]): Promise<v
       points
     });
     
-    console.log(`✅ [MEMORY STORE] Stored ${points.length} memories in Qdrant`);
+    logger.success(`Stored ${points.length} memories in Qdrant`);
     
   } catch (error) {
-    console.error('❌ [MEMORY STORE] Error storing memories:', error);
+    logger.error('Error storing memories:', error);
     throw error;
   }
 }
@@ -277,7 +278,7 @@ export async function searchMemories(
       score: result.score
     }));
   } catch (error) {
-    console.error('❌ [MEMORY STORE] Error searching memories:', error);
+    logger.error('Error searching memories:', error);
     return [];
   }
 }
@@ -325,7 +326,7 @@ export async function getUserMemories(
       return b.timestamp - a.timestamp;
     });
   } catch (error) {
-    console.error('❌ [MEMORY STORE] Error getting user memories:', error);
+    logger.error('Error getting user memories:', error);
     return [];
   }
 }
@@ -357,7 +358,7 @@ export async function getRecentMemories(limit: number = 20): Promise<StoredMemor
     // Sort by timestamp descending
     return memories.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
   } catch (error) {
-    console.error('❌ [MEMORY STORE] Error getting recent memories:', error);
+    logger.error('Error getting recent memories:', error);
     return [];
   }
 }
@@ -400,7 +401,7 @@ export async function getImportantMemories(
     // Sort by importance descending
     return memories.sort((a, b) => b.importance - a.importance);
   } catch (error) {
-    console.error('❌ [MEMORY STORE] Error getting important memories:', error);
+    logger.error('Error getting important memories:', error);
     return [];
   }
 }
@@ -433,12 +434,12 @@ export async function cleanupExpiredMemories(): Promise<{ deleted: number; kept:
   const client = getQdrantClient();
   const now = Date.now();
   
-  console.log('\n🧹 [MEMORY CLEANUP] Starting memory cleanup...');
-  console.log(`  Retention policy:`);
-  console.log(`    • Importance 1-4: ${MEMORY_RETENTION_LOW_HOURS}h (${(MEMORY_RETENTION_LOW_HOURS / 24).toFixed(1)} days)`);
-  console.log(`    • Importance 5-7: ${MEMORY_RETENTION_MED_HOURS}h (${(MEMORY_RETENTION_MED_HOURS / 24).toFixed(1)} days)`);
-  console.log(`    • Importance 8-9: ${MEMORY_RETENTION_HIGH_HOURS}h (${(MEMORY_RETENTION_HIGH_HOURS / 24).toFixed(1)} days)`);
-  console.log(`    • Importance 10: permanent (never deleted)`);
+  logger.memory('\nStarting memory cleanup...');
+  logger.memory('  Retention policy:');
+  logger.memory(`    • Importance 1-4: ${MEMORY_RETENTION_LOW_HOURS}h (${(MEMORY_RETENTION_LOW_HOURS / 24).toFixed(1)} days)`);
+  logger.memory(`    • Importance 5-7: ${MEMORY_RETENTION_MED_HOURS}h (${(MEMORY_RETENTION_MED_HOURS / 24).toFixed(1)} days)`);
+  logger.memory(`    • Importance 8-9: ${MEMORY_RETENTION_HIGH_HOURS}h (${(MEMORY_RETENTION_HIGH_HOURS / 24).toFixed(1)} days)`);
+  logger.memory('    • Importance 10: permanent (never deleted)');
   
   try {
     // Fetch all memories (scroll through collection)
@@ -468,7 +469,7 @@ export async function cleanupExpiredMemories(): Promise<{ deleted: number; kept:
       offset = result.next_page_offset as string | number;
     }
     
-    console.log(`  Found ${allMemories.length} total memories`);
+    logger.memory(`  Found ${allMemories.length} total memories`);
     
     // Identify expired memories
     const toDelete: string[] = [];
@@ -485,7 +486,7 @@ export async function cleanupExpiredMemories(): Promise<{ deleted: number; kept:
       if (isExpired) {
         toDelete.push(memory.id);
         const ageHours = Math.round(ageMs / (60 * 60 * 1000));
-        console.log(`  🗑️ Expired: [imp:${memory.importance}] "${memory.content.substring(0, 50)}..." (${ageHours}h old)`);
+        logger.memory(`  Expired: [imp:${memory.importance}] "${memory.content.substring(0, 50)}..." (${ageHours}h old)`);
       }
     }
     
@@ -495,15 +496,15 @@ export async function cleanupExpiredMemories(): Promise<{ deleted: number; kept:
         wait: true,
         points: toDelete
       });
-      console.log(`\n✅ [MEMORY CLEANUP] Deleted ${toDelete.length} expired memories, kept ${allMemories.length - toDelete.length}`);
+      logger.success(`Deleted ${toDelete.length} expired memories, kept ${allMemories.length - toDelete.length}`);
     } else {
-      console.log(`\n✅ [MEMORY CLEANUP] No expired memories found, all ${allMemories.length} memories retained`);
+      logger.success(`No expired memories found, all ${allMemories.length} memories retained`);
     }
     
     return { deleted: toDelete.length, kept: allMemories.length - toDelete.length };
     
   } catch (error) {
-    console.error('❌ [MEMORY CLEANUP] Error during cleanup:', error);
+    logger.error('Error during cleanup:', error);
     return { deleted: 0, kept: 0 };
   }
 }
@@ -514,14 +515,14 @@ export async function cleanupExpiredMemories(): Promise<{ deleted: number; kept:
 export function startMemoryCleanupScheduler(intervalHours: number = 6): NodeJS.Timeout {
   const intervalMs = intervalHours * 60 * 60 * 1000;
   
-  console.log(`🕐 [MEMORY CLEANUP] Scheduler started (runs every ${intervalHours}h)`);
+  logger.memory(`Scheduler started (runs every ${intervalHours}h)`);
   
   // Run immediately on start
-  cleanupExpiredMemories().catch(err => console.error('Cleanup error:', err));
+  cleanupExpiredMemories().catch(err => logger.error('Cleanup error:', err));
   
   // Then run periodically
   return setInterval(() => {
-    cleanupExpiredMemories().catch(err => console.error('Cleanup error:', err));
+    cleanupExpiredMemories().catch(err => logger.error('Cleanup error:', err));
   }, intervalMs);
 }
 

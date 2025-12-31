@@ -4,6 +4,7 @@
 
 import { VoyageAIClient } from 'voyageai';
 import { config, getSecrets } from './config';
+import { logger } from './logger';
 
 // Configuration from YAML config and secrets
 const secrets = getSecrets();
@@ -19,7 +20,7 @@ function getVoyageClient(): VoyageAIClient {
       throw new Error('VOYAGEAI_API_KEY is not set in environment');
     }
     voyageClient = new VoyageAIClient({ apiKey: VOYAGEAI_API_KEY });
-    console.log(`✅ VoyageAI client initialized (model: ${VOYAGEAI_MODEL})`);
+    logger.database(`VoyageAI client initialized (model: ${VOYAGEAI_MODEL})`);
   }
   return voyageClient;
 }
@@ -43,7 +44,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     return result.data[0].embedding;
   } catch (error) {
-    console.error('❌ VoyageAI embedding error:', error);
+    logger.error('VoyageAI embedding error:', error);
     throw error;
   }
 }
@@ -60,7 +61,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   const client = getVoyageClient();
   
   try {
-    console.log(`🔄 [VoyageAI] Generating embeddings for ${texts.length} texts...`);
+    logger.database(`Generating embeddings for ${texts.length} texts...`);
     
     const result = await client.embed({
       input: texts,
@@ -81,11 +82,11 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       return d.embedding;
     });
     
-    console.log(`✅ [VoyageAI] Generated ${embeddings.length} embeddings (dim: ${embeddings[0]?.length || 0})`);
+    logger.success(`Generated ${embeddings.length} embeddings (dim: ${embeddings[0]?.length || 0})`);
     
     return embeddings;
   } catch (error) {
-    console.error('❌ VoyageAI batch embedding error:', error);
+    logger.error('VoyageAI batch embedding error:', error);
     throw error;
   }
 }
@@ -110,7 +111,7 @@ export async function generateQueryEmbedding(query: string): Promise<number[]> {
     
     return result.data[0].embedding;
   } catch (error) {
-    console.error('❌ VoyageAI query embedding error:', error);
+    logger.error('VoyageAI query embedding error:', error);
     throw error;
   }
 }

@@ -2,6 +2,7 @@
 // OpenAI-compatible API at https://gen.pollinations.ai
 
 import { config, getSecrets } from './config';
+import { logger } from './logger';
 
 const secrets = getSecrets();
 const POLLINATIONS_BASE_URL = config.pollinations.baseUrl;
@@ -132,7 +133,7 @@ export async function chatCompletion(
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      console.log(`🤖 Sending chat completion request to Pollinations (model: ${model})${attempt > 1 ? ` [Attempt ${attempt}/${MAX_RETRIES}]` : ''}`);
+      logger.llm(`Sending chat completion request to Pollinations (model: ${model})${attempt > 1 ? ` [Attempt ${attempt}/${MAX_RETRIES}]` : ''}`);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -146,7 +147,7 @@ export async function chatCompletion(
         
         // Retry on 429 (rate limit) or 5xx (server errors)
         if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
-          console.log(`⚠️ Request failed with status ${response.status}, retrying in ${attempt * 2} seconds...`);
+          logger.warn(`Request failed with status ${response.status}, retrying in ${attempt * 2} seconds...`);
           await new Promise(resolve => setTimeout(resolve, attempt * 2000)); // Exponential backoff
           lastError = error;
           continue;
@@ -156,7 +157,7 @@ export async function chatCompletion(
       }
       
       const data = await response.json() as ChatCompletionResponse;
-      console.log(`✅ Received response from Pollinations`);
+      logger.success('Received response from Pollinations');
       
       return data;
     } catch (error) {
@@ -164,7 +165,7 @@ export async function chatCompletion(
       
       // Only retry on network errors or if we haven't exhausted retries
       if (attempt < MAX_RETRIES && (error as any).code !== 'ABORT_ERR') {
-        console.log(`⚠️ Request failed: ${(error as Error).message}, retrying in ${attempt * 2} seconds...`);
+        logger.warn(`Request failed: ${(error as Error).message}, retrying in ${attempt * 2} seconds...`);
         await new Promise(resolve => setTimeout(resolve, attempt * 2000));
         continue;
       }
@@ -205,7 +206,7 @@ export async function* chatCompletionStream(
   if (frequency_penalty !== 0) body.frequency_penalty = frequency_penalty;
   if (presence_penalty !== 0) body.presence_penalty = presence_penalty;
   
-  console.log(`🤖 Starting streaming chat completion (model: ${model})`);
+  logger.llm(`Starting streaming chat completion (model: ${model})`);
   
   const response = await fetch(url, {
     method: 'POST',
@@ -249,7 +250,7 @@ export async function* chatCompletionStream(
             yield json as StreamChunk;
           } catch (e) {
             // Skip invalid JSON
-            console.warn('⚠️ Invalid JSON in stream:', trimmed);
+            logger.warn('Invalid JSON in stream:', trimmed);
           }
         }
       }
@@ -258,7 +259,7 @@ export async function* chatCompletionStream(
     reader.releaseLock();
   }
   
-  console.log(`✅ Streaming completed`);
+  logger.success('Streaming completed');
 }
 
 // Simple text generation (non-chat endpoint)
@@ -282,7 +283,7 @@ export async function generateText(
   
   const url = `${POLLINATIONS_BASE_URL}/text/${encodeURIComponent(prompt)}?${params.toString()}`;
   
-  console.log(`🤖 Generating text with Pollinations (model: ${model})`);
+  logger.llm(`Generating text with Pollinations (model: ${model})`);
   
   const response = await fetch(url);
   
@@ -292,7 +293,7 @@ export async function generateText(
   }
   
   const text = await response.text();
-  console.log(`✅ Text generated (${text.length} chars)`);
+  logger.success(`Text generated (${text.length} chars)`);
   
   return text;
 }

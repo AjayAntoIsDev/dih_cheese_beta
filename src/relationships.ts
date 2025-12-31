@@ -8,6 +8,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { config } from './config';
+import { logger } from './logger';
 
 // Configuration from YAML config
 const DATA_DIR = config.relationships.dataDir;
@@ -32,7 +33,7 @@ let isLoaded = false;
 function ensureDataDir(): void {
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });
-    console.log(`📁 Created data directory: ${DATA_DIR}`);
+    logger.info(`Created data directory: ${DATA_DIR}`);
   }
 }
 
@@ -57,13 +58,13 @@ function loadRelationships(): void {
         relationships = new Map(Object.entries(parsed));
       }
       
-      console.log(`✅ Loaded ${relationships.size} relationships from ${RELATIONSHIPS_FILE}`);
+      logger.success(`Loaded ${relationships.size} relationships from ${RELATIONSHIPS_FILE}`);
     } else {
-      console.log(`📝 No relationships file found, starting fresh`);
+      logger.info('No relationships file found, starting fresh');
       relationships = new Map();
     }
   } catch (error) {
-    console.error('❌ Error loading relationships:', error);
+    logger.error('Error loading relationships:', error);
     relationships = new Map();
   }
   
@@ -79,9 +80,9 @@ function saveRelationships(): void {
   try {
     const data = Array.from(relationships.values());
     writeFileSync(RELATIONSHIPS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 Saved ${relationships.size} relationships to ${RELATIONSHIPS_FILE}`);
+    logger.success(`Saved ${relationships.size} relationships to ${RELATIONSHIPS_FILE}`);
   } catch (error) {
-    console.error('❌ Error saving relationships:', error);
+    logger.error('Error saving relationships:', error);
   }
 }
 
@@ -112,7 +113,7 @@ export function updateSentiment(
     existing.last_interaction = now;
     existing.interaction_count += 1;
     
-    console.log(`🔄 [RELATIONSHIPS] Updated ${username} (${userId}): ${existing.affinity_score - delta} → ${existing.affinity_score} (delta: ${sentimentDelta})`);
+    logger.memory(`Updated ${username} (${userId}): ${existing.affinity_score - delta} → ${existing.affinity_score} (delta: ${sentimentDelta})`);
   } else {
     // Create new relationship
     const newEntry: RelationshipEntry = {
@@ -124,7 +125,7 @@ export function updateSentiment(
     };
     relationships.set(userId, newEntry);
     
-    console.log(`✨ [RELATIONSHIPS] New relationship with ${username} (${userId}): ${delta}`);
+    logger.memory(`New relationship with ${username} (${userId}): ${delta}`);
   }
   
   // Save to disk
@@ -199,21 +200,21 @@ export function updateSentimentsBatch(
 export function debugPrintRelationships(): void {
   loadRelationships();
   
-  console.log('\n========================================');
-  console.log('[RELATIONSHIPS] Current state:');
-  console.log('----------------------------------------');
+  logger.debug('\n========================================');
+  logger.debug('[RELATIONSHIPS] Current state:');
+  logger.debug('----------------------------------------');
   
   if (relationships.size === 0) {
-    console.log('  (no relationships yet)');
+    logger.debug('  (no relationships yet)');
   } else {
     const sorted = Array.from(relationships.values())
       .sort((a, b) => b.affinity_score - a.affinity_score);
     
     sorted.forEach((r, i) => {
       const emoji = r.affinity_score > 0 ? '💚' : r.affinity_score < 0 ? '💔' : '🤍';
-      console.log(`  ${i + 1}. ${emoji} ${r.username} (${r.user_id}): ${r.affinity_score} | interactions: ${r.interaction_count}`);
+      logger.debug(`  ${i + 1}. ${emoji} ${r.username} (${r.user_id}): ${r.affinity_score} | interactions: ${r.interaction_count}`);
     });
   }
   
-  console.log('========================================\n');
+  logger.debug('========================================\n');
 }

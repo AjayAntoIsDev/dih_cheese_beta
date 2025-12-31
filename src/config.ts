@@ -104,6 +104,13 @@ export interface RelationshipsConfig {
   dataDir: string;
 }
 
+export interface LoggingConfig {
+  level: 'error' | 'warn' | 'info' | 'debug' | 'verbose';
+  fileEnabled: boolean;
+  errorLogFile: string;
+  combinedLogFile: string;
+}
+
 export interface AppConfig {
   bot: BotConfig;
   server: ServerConfig;
@@ -117,6 +124,7 @@ export interface AppConfig {
   qdrant: QdrantConfig;
   voyageai: VoyageAIConfig;
   relationships: RelationshipsConfig;
+  logging: LoggingConfig;
 }
 
 // Default configuration
@@ -186,6 +194,12 @@ const defaultConfig: AppConfig = {
   },
   relationships: {
     dataDir: join(__dirname, '..', 'data')
+  },
+  logging: {
+    level: 'info',
+    fileEnabled: false,
+    errorLogFile: 'logs/error.log',
+    combinedLogFile: 'logs/combined.log'
   }
 };
 
@@ -221,13 +235,13 @@ function loadConfig(): AppConfig {
     try {
       const fileContent = readFileSync(CONFIG_PATH, 'utf-8');
       fileConfig = yaml.load(fileContent) as Partial<AppConfig> || {};
-      console.log(`📄 Loaded configuration from ${CONFIG_PATH}`);
+      console.log(`ℹ️  Loaded configuration from ${CONFIG_PATH}`);
     } catch (error) {
-      console.error(`⚠️ Error loading config.yaml:`, error);
-      console.log('📄 Using default configuration');
+      console.error('❌ Error loading config.yaml:', error);
+      console.log('ℹ️  Using default configuration');
     }
   } else {
-    console.log(`📄 No config.yaml found at ${CONFIG_PATH}, using defaults`);
+    console.log(`ℹ️  No config.yaml found at ${CONFIG_PATH}, using defaults`);
   }
   
   // Merge with defaults
@@ -264,6 +278,10 @@ export function getSecrets(): Secrets {
 // Export singleton config
 export const config: AppConfig = loadConfig();
 
+// Initialize logger after config is loaded
+import { initLogger } from './logger';
+initLogger(config.logging);
+
 // Helper to print config (without secrets)
 export function printConfig(): void {
   console.log('\n⚙️  Configuration:');
@@ -291,6 +309,9 @@ export function printConfig(): void {
   console.log(`    - endpoint: ${config.qdrant.endpoint ? '✓ Set' : '✗ Not set'}`);
   console.log(`    - collection: ${config.qdrant.collectionName}`);
   console.log(`    - vectorSize: ${config.qdrant.vectorSize}`);
+  console.log('  Logging:');
+  console.log(`    - level: ${config.logging.level}`);
+  console.log(`    - fileEnabled: ${config.logging.fileEnabled}`);
 }
 
 // Re-export for convenience

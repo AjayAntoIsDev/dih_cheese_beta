@@ -13,6 +13,7 @@ import { chatCompletion, PollinationsModel } from './pollinations';
 import { storeMemoriesBatch, initializeMemoryCollection } from './memory-store';
 import { updateSentiment, debugPrintRelationships } from './relationships';
 import { config } from './config';
+import { logger } from './logger';
 
 // Buffer configuration from YAML config
 const MEMORY_SILENCE_TIMEOUT_MS = config.memoryBuffer.silenceTimeoutMs;
@@ -30,7 +31,7 @@ function loadMemoryManagerPrompt(): string {
     // Replace {{BOT_NAME}} placeholder with actual bot name
     return prompt.replace(/\{\{BOT_NAME\}\}/g, config.bot.name);
   } catch (error) {
-    console.error('❌ Error loading memory-manager.txt:', error);
+    logger.error('Error loading memory-manager.txt:', error);
     throw new Error('Failed to load memory manager prompt');
   }
 }
@@ -169,7 +170,7 @@ function triggerSummarize(reason: TriggerReason): void {
 
   // Call summarize with the buffer (async, fire and forget)
   summarizeBuffer([...globalBuffer], reason).catch(err => {
-    console.error('[MEMORY BUFFER] Summarization error:', err);
+    logger.error('Summarization error:', err);
   });
 
   // Clear the buffer
@@ -191,29 +192,29 @@ function formatBufferForLLM(buffer: BufferedMessage[]): string {
  * Summarize the buffer contents using LLM
  */
 async function summarizeBuffer(buffer: BufferedMessage[], reason: TriggerReason): Promise<void> {
-  console.log('\n========================================');
-  console.log(`[MEMORY BUFFER] Summarization triggered!`);
-  console.log(`Reason: ${reason}`);
-  console.log(`Message count: ${buffer.length}`);
-  console.log(`Estimated tokens: ${buffer.reduce((t, m) => t + estimateTokens(`${m.username}: ${m.content}`), 0)}`);
+  logger.memory('\n========================================')
+  logger.memory('[MEMORY BUFFER] Summarization triggered!');
+  logger.memory(`Reason: ${reason}`);
+  logger.memory(`Message count: ${buffer.length}`);
+  logger.memory(`Estimated tokens: ${buffer.reduce((t, m) => t + estimateTokens(`${m.username}: ${m.content}`), 0)}`);
   
   // Show unique channels in this buffer
   const uniqueChannels = [...new Set(buffer.map(m => m.channelId))];
-  console.log(`Channels: ${uniqueChannels.length} (${uniqueChannels.join(', ')})`);
-  console.log(`Model: ${MEMORY_MANAGER_MODEL}`);
+  logger.memory(`Channels: ${uniqueChannels.length} (${uniqueChannels.join(', ')})`);
+  logger.memory(`Model: ${MEMORY_MANAGER_MODEL}`);
   
-  console.log('----------------------------------------');
-  console.log('Buffer contents:');
+  logger.memory('----------------------------------------');
+  logger.memory('Buffer contents:');
   
   buffer.forEach((msg, index) => {
     const time = msg.timestamp.toISOString();
     const type = msg.messageType.toUpperCase().padEnd(8);
     const bot = msg.isBot ? '[BOT]' : '     ';
-    console.log(`  ${index + 1}. [${time}] ${type} ${bot} #${msg.channelId.slice(-4)} ${msg.username} (${msg.userId}): ${msg.content.substring(0, 100)}${msg.content.length > 100 ? '...' : ''}`);
+    logger.memory(`  ${index + 1}. [${time}] ${type} ${bot} #${msg.channelId.slice(-4)} ${msg.username} (${msg.userId}): ${msg.content.substring(0, 100)}${msg.content.length > 100 ? '...' : ''}`);
   });
   
-  console.log('----------------------------------------');
-  console.log('Sending to LLM for memory extraction...');
+  logger.memory('----------------------------------------');
+  logger.memory('Sending to LLM for memory extraction...');
 
   try {
     const systemPrompt = loadMemoryManagerPrompt();
@@ -231,12 +232,12 @@ async function summarizeBuffer(buffer: BufferedMessage[], reason: TriggerReason)
     const assistantMessage = response.choices[0]?.message?.content;
     
     if (!assistantMessage) {
-      console.error('[MEMORY BUFFER] No response from LLM');
+      logger.error('No response from LLM');
       return;
     }
 
-    console.log('\n[MEMORY BUFFER] LLM Response:');
-    console.log(assistantMessage);
+    logger.memory('\n[MEMORY BUFFER] LLM Response:');
+    logger.memory(assistantMessage);
 
     // Parse JSON response
     try {
@@ -257,22 +258,22 @@ async function summarizeBuffer(buffer: BufferedMessage[], reason: TriggerReason)
 
       const result: MemoryExtractionResult = JSON.parse(jsonStr);
       
-      console.log('\n[MEMORY BUFFER] Extracted memories:');
-      console.log(`  - ${result.memories.length} memories`);
-      console.log(`  - ${result.relationship_updates.length} relationship updates`);
+      logger.memory('\n[MEMORY BUFFER] Extracted memories:');
+      logger.memory(`  - ${result.memories.length} memories`);
+      logger.memory(`  - ${result.relationship_updates.length} relationship updates`);
       
       if (result.memories.length > 0) {
-        console.log('\nMemories:');
+        logger.memory('\nMemories:');
         result.memories.forEach((mem, i) => {
-          console.log(`  ${i + 1}. [${mem.type}] (importance: ${mem.importance}) ${mem.content}`);
-          console.log(`     Tags: ${mem.tags.join(', ')} | User: ${mem.user_id || 'N/A'}`);
+          logger.memory(`  ${i + 1}. [${mem.type}] (importance: ${mem.importance}) ${mem.content}`);
+          logger.memory(`     Tags: ${mem.tags.join(', ')} | User: ${mem.user_id || 'N/A'}`);
         });
       }
       
       if (result.relationship_updates.length > 0) {
-        console.log('\nRelationship Updates:');
+        logger.memory('\nRelationship Updates:');
         result.relationship_updates.forEach((rel, i) => {
-          console.log(`  ${i + 1}. User ${rel.user_id}: ${rel.sentiment_delta} - ${rel.reasoning}`);
+          logger.memory(`  ${i + 1}. User ${rel.user_id}: ${rel.sentiment_delta} - ${rel.reasoning}`);
         });
       }
 
@@ -281,15 +282,15 @@ async function summarizeBuffer(buffer: BufferedMessage[], reason: TriggerReason)
         try {
           await initializeMemoryCollection();
           await storeMemoriesBatch(result.memories);
-          console.log(`\n✅ [MEMORY BUFFER] Stored ${result.memories.length} memories in Qdrant`);
+          logger.success(`Stored ${result.memories.length} memories in Qdrant`);
         } catch (storeError) {
-          console.error('[MEMORY BUFFER] Failed to store memories in Qdrant:', storeError);
+          logger.error('Failed to store memories in Qdrant:', storeError);
         }
       }
       
       // Update user relationship scores
       if (result.relationship_updates.length > 0) {
-        console.log('\n🔄 [MEMORY BUFFER] Updating relationship scores...');
+        logger.memory('\nUpdating relationship scores...');
         
         // We need to find usernames from the buffer for the relationship updates
         const userIdToUsername = new Map<string, string>();
@@ -309,15 +310,15 @@ async function summarizeBuffer(buffer: BufferedMessage[], reason: TriggerReason)
       }
       
     } catch (parseError) {
-      console.error('[MEMORY BUFFER] Failed to parse LLM response as JSON:', parseError);
-      console.log('Raw response:', assistantMessage);
+      logger.error('Failed to parse LLM response as JSON:', parseError);
+      logger.debug('Raw response:', assistantMessage);
     }
 
   } catch (error) {
-    console.error('[MEMORY BUFFER] LLM request failed:', error);
+    logger.error('LLM request failed:', error);
   }
   
-  console.log('========================================\n');
+  logger.memory('========================================\n');
 }
 
 /**
@@ -344,7 +345,7 @@ export function addToMemoryBuffer(
   // Add to global buffer
   globalBuffer.push(message);
 
-  console.log(`[MEMORY BUFFER] Added ${messageType} message from ${username} (${globalBuffer.length} msgs, ~${getBufferTokenCount()} tokens)`);
+  logger.memory(`Added ${messageType} message from ${username} (${globalBuffer.length} msgs, ~${getBufferTokenCount()} tokens)`);
 
   // Reset silence timer
   resetSilenceTimer();
@@ -395,5 +396,5 @@ export function clearMemoryBuffer(): void {
     silenceTimer = null;
   }
   globalBuffer = [];
-  console.log(`[MEMORY BUFFER] Cleared global buffer`);
+  logger.memory('Cleared global buffer');
 }

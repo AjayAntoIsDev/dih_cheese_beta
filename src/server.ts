@@ -5,18 +5,19 @@ import { sendMessage, sendTimerMessage, MessageType, splitMessage } from './mess
 import { addToMemoryBuffer } from './memory-buffer';
 import { startMemoryCleanupScheduler } from './memory-store';
 import { config, getSecrets, printConfig } from './config';
+import { logger } from './logger';
 
-console.log('🚀 Starting Discord bot...');
+logger.info('🚀 Starting Discord bot...');
 
 // Get secrets from environment
 const secrets = getSecrets();
 
-console.log('📋 Secrets check:');
-console.log('  - DISCORD_TOKEN:', secrets.discordToken ? '✓ Set' : '✗ Missing');
-console.log('  - POLLINATIONS_API_KEY:', secrets.pollinationsApiKey ? '✓ Set' : '✗ Not set (using free tier)');
-console.log('  - VOYAGEAI_API_KEY:', secrets.voyageaiApiKey ? '✓ Set' : '✗ Not set');
-console.log('  - QDRANT_API_KEY:', secrets.qdrantApiKey ? '✓ Set' : '✗ Not set');
-console.log('  - QDRANT_ENDPOINT:', config.qdrant.endpoint ? '✓ Set' : '✗ Missing');
+logger.info('📋 Secrets check:');
+logger.info(`  - DISCORD_TOKEN: ${secrets.discordToken ? '✓ Set' : '✗ Missing'}`);
+logger.info(`  - POLLINATIONS_API_KEY: ${secrets.pollinationsApiKey ? '✓ Set' : '✗ Not set (using free tier)'}`);
+logger.info(`  - VOYAGEAI_API_KEY: ${secrets.voyageaiApiKey ? '✓ Set' : '✗ Not set'}`);
+logger.info(`  - QDRANT_API_KEY: ${secrets.qdrantApiKey ? '✓ Set' : '✗ Not set'}`);
+logger.info(`  - QDRANT_ENDPOINT: ${config.qdrant.endpoint ? '✓ Set' : '✗ Missing'}`);
 
 // Print loaded configuration
 printConfig();
@@ -50,7 +51,7 @@ function truncateMessage(message: string, maxLength: number): string {
     return message;
 }
 
-console.log('🔧 Creating Discord client...');
+logger.discord('Creating Discord client...');
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds, // Needed for commands and mentions
@@ -63,23 +64,23 @@ const client = new Client({
 
 // Handle process-level errors
 process.on('unhandledRejection', (error) => {
-  console.error('❌ Unhandled promise rejection:', error);
+  logger.error('Unhandled promise rejection:', error);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught exception:', error);
+  logger.error('Uncaught exception:', error);
   process.exit(1);
 });
 
 client.on('error', (error) => {
-  console.error('🛑 Discord client error:', error);
+  logger.error('Discord client error:', error);
 });
 
 // Discord Bot Ready Event
 client.once('ready', () => {
-  console.log(`🤖 Logged in as ${client.user?.tag}!`);
+  logger.success(`Logged in as ${client.user?.tag}!`);
   if (MESSAGE_BATCH_ENABLED) {
-    console.log(`📦 Message batching enabled: ${MESSAGE_BATCH_SIZE} messages or ${MESSAGE_BATCH_TIMEOUT_MS}ms timeout`);
+    logger.discord(`Message batching enabled: ${MESSAGE_BATCH_SIZE} messages or ${MESSAGE_BATCH_TIMEOUT_MS}ms timeout`);
   }
   
   // Start memory cleanup scheduler if memory is enabled
@@ -111,7 +112,7 @@ async function drainMessageBatch(channelId: string) {
     return;
   }
 
-  console.log(`📦 Draining batch for channel ${channelId}: ${buffer.length} messages`);
+  logger.debug(`Draining batch for channel ${channelId}: ${buffer.length} messages`);
 
   // Get the last message to use as the reply target
   const lastMessage = buffer[buffer.length - 1].message;
@@ -144,7 +145,7 @@ async function drainMessageBatch(channelId: string) {
 
   const batchMessage = `[Batch of ${buffer.length} messages from ${channelName}]\n${batchedContent}`;
 
-  console.log(`📦 Batch content:\n${batchMessage}`);
+  logger.verbose(`Batch content:\n${batchMessage}`);
 
   try {
     // Send batch to agent using the last message as context
@@ -152,12 +153,12 @@ async function drainMessageBatch(channelId: string) {
 
     if (msg !== "" && canRespond) {
       await sendSplitReply(lastMessage, msg);
-      console.log(`📦 Batch response sent (${msg.length} chars)`);
+      logger.debug(`Batch response sent (${msg.length} chars)`);
     } else if (msg !== "" && !canRespond) {
-      console.log(`📦 Agent generated response but not responding (not in response channel): ${msg}`);
+      logger.debug(`Agent generated response but not responding (not in response channel): ${msg}`);
     }
   } catch (error) {
-    console.error("🛑 Error processing batch:", error);
+    logger.error("Error processing batch:", error);
   }
 
   // Clear the buffer
@@ -178,11 +179,11 @@ function addMessageToBatch(message: OmitPartialGroupDMChannel<Message<boolean>>,
     timestamp: Date.now()
   });
 
-  console.log(`📦 Added message to batch (${buffer.length}/${MESSAGE_BATCH_SIZE})`);
+  logger.debug(`Added message to batch (${buffer.length}/${MESSAGE_BATCH_SIZE})`);
 
   // Check if we should drain due to size
   if (buffer.length >= MESSAGE_BATCH_SIZE) {
-    console.log(`📦 Batch size limit reached, draining...`);
+    logger.debug(`Batch size limit reached, draining...`);
     drainMessageBatch(channelId);
     return;
   }
@@ -193,7 +194,7 @@ function addMessageToBatch(message: OmitPartialGroupDMChannel<Message<boolean>>,
   }
 
   const timeout = setTimeout(() => {
-    console.log(`📦 Batch timeout reached, draining...`);
+    logger.debug(`Batch timeout reached, draining...`);
     drainMessageBatch(channelId);
   }, MESSAGE_BATCH_TIMEOUT_MS);
 
@@ -285,12 +286,12 @@ async function processAndSendMessage(message: OmitPartialGroupDMChannel<Message<
     const msg = await sendMessage(message, messageType, canRespond);
     if (msg !== "" && canRespond) {
       await sendSplitReply(message, msg);
-      console.log(`Message sent (${msg.length} chars)`);
+      logger.info(`Message sent (${msg.length} chars)`);
     } else if (msg !== "" && !canRespond) {
-      console.log(`Agent generated response but not responding (not in response channel): ${msg}`);
+      logger.debug(`Agent generated response but not responding (not in response channel): ${msg}`);
     }
   } catch (error) {
-    console.error("🛑 Error processing and sending message:", error);
+    logger.error("Error processing and sending message:", error);
   }
 }
 
@@ -298,7 +299,7 @@ async function processAndSendMessage(message: OmitPartialGroupDMChannel<Message<
 // Function to start a randomized event timer with improved timing
 async function startRandomEventTimer() {
   if (!ENABLE_TIMER) {
-      console.log("Timer feature is disabled.");
+      logger.info("Timer feature is disabled.");
       return;
   }
 
@@ -308,16 +309,16 @@ async function startRandomEventTimer() {
   const randomMinutes = minMinutes + Math.floor(Math.random() * (TIMER_INTERVAL_MINUTES - minMinutes));
   
   // Log the next timer interval for debugging
-  console.log(`⏰ Timer scheduled to fire in ${randomMinutes} minutes`);
+  logger.debug(`Timer scheduled to fire in ${randomMinutes} minutes`);
   
   const delay = randomMinutes * 60 * 1000; // Convert minutes to milliseconds
 
   setTimeout(async () => {
-      console.log(`⏰ Timer fired after ${randomMinutes} minutes`);
+      logger.debug(`Timer fired after ${randomMinutes} minutes`);
       
       // Determine if the event should fire based on the probability
       if (Math.random() < FIRING_PROBABILITY) {
-          console.log(`⏰ Random event triggered (${FIRING_PROBABILITY * 100}% chance)`);
+          logger.info(`Random event triggered (${FIRING_PROBABILITY * 100}% chance)`);
 
           // Get the channel if available
           let channel: { send: (content: string) => Promise<any> } | undefined = undefined;
@@ -327,10 +328,10 @@ async function startRandomEventTimer() {
                   if (fetchedChannel && 'send' in fetchedChannel) {
                       channel = fetchedChannel as any;
                   } else {
-                      console.log("⏰ Channel not found or is not a text channel.");
+                      logger.warn("Channel not found or is not a text channel.");
                   }
               } catch (error) {
-                  console.error("⏰ Error fetching channel:", error);
+                  logger.error("Error fetching channel:", error);
               }
           }
 
@@ -341,15 +342,15 @@ async function startRandomEventTimer() {
           if (msg !== "" && channel) {
               try {
                   await sendSplitMessage(channel, msg);
-                  console.log(`⏰ Timer message sent to channel (${msg.length} chars)`);
+                  logger.info(`Timer message sent to channel (${msg.length} chars)`);
               } catch (error) {
-                  console.error("⏰ Error sending timer message:", error);
+                  logger.error("Error sending timer message:", error);
               }
           } else if (!channel) {
-              console.log("⏰ No TIMER_CHANNEL_ID defined or channel not available; message not sent.");
+              logger.debug("No TIMER_CHANNEL_ID defined or channel not available; message not sent.");
           }
       } else {
-          console.log(`⏰ Random event not triggered (${(1 - FIRING_PROBABILITY) * 100}% chance)`);
+          logger.debug(`Random event not triggered (${(1 - FIRING_PROBABILITY) * 100}% chance)`);
       }
       
       // Schedule the next timer with a small delay to prevent immediate restarts
@@ -381,35 +382,35 @@ client.on('messageCreate', async (message) => {
 
   if (CHANNEL_ID && message.channel.id !== CHANNEL_ID) {
     // Ignore messages from other channels
-    console.log(`📩 Ignoring message from other channels (only listening on channel=${CHANNEL_ID})...`);
+    logger.verbose(`Ignoring message from other channels (only listening on channel=${CHANNEL_ID})...`);
     return;
   }
 
   if (message.author.id === client.user?.id) {
     // Ignore messages from the bot itself
-    console.log(`📩 Ignoring message from myself...`);
+    logger.verbose(`Ignoring message from myself...`);
     return;
   }
 
   if (message.author.bot && !RESPOND_TO_BOTS) {
     // Ignore other bots
-    console.log(`📩 Ignoring other bot...`);
+    logger.verbose(`Ignoring other bot...`);
     return;
   }
 
   // Ignore messages that start with !
   if (message.content.startsWith('!')) {
-    console.log(`📩 Ignoring message that starts with !...`);
+    logger.verbose(`Ignoring message that starts with !...`);
     return;
   }
 
   // 📨 Handle Direct Messages (DMs)
   if (message.guild === null) { // If no guild, it's a DM
-    console.log(`📩 Received DM from ${message.author.username}: ${message.content}`);
+    logger.discord(`Received DM from ${message.author.username}: ${message.content}`);
     if (RESPOND_TO_DMS) {
       processAndSendMessage(message, MessageType.DM);
     } else {
-      console.log(`📩 Ignoring DM...`);
+      logger.debug(`Ignoring DM...`);
     }
     return;
   }
@@ -427,18 +428,18 @@ client.on('messageCreate', async (message) => {
       const originalMessage = await message.channel.messages.fetch(message.reference.messageId);
       isReplyToBot = originalMessage.author.id === client.user?.id;
     } catch (error) {
-      console.log(`⚠️ Could not fetch referenced message: ${error instanceof Error ? error.message : error}`);
+      logger.warn(`Could not fetch referenced message: ${error instanceof Error ? error.message : error}`);
     }
   }
   
   if (RESPOND_TO_MENTIONS && (isMention || isReplyToBot || containsBotName)) {
-    console.log(`📩 Received message from ${message.author.username}: ${message.content}${containsBotName && !isMention ? ' (triggered by bot)' : ''}`);
+    logger.info(`Received message from ${message.author.username}: ${message.content}${containsBotName && !isMention ? ' (triggered by bot)' : ''}`);
 
     // Check if we can respond in this channel before showing typing indicator
     const canRespond = shouldRespondInChannel(message);
-    console.log(`💬 Can respond in this channel: ${canRespond} (channel=${message.channel.id}, responseChannel=${RESPONSE_CHANNEL_ID || 'any'})`);
+    logger.debug(`Can respond in this channel: ${canRespond} (channel=${message.channel.id}, responseChannel=${RESPONSE_CHANNEL_ID || 'any'})`);
     if (canRespond) {
-      console.log(`⌨️  Sending typing indicator...`);
+      logger.debug(`Sending typing indicator...`);
       if (REPLY_IN_THREADS && message.guild !== null) {
         if (message.channel.isThread()) {
           await message.channel.sendTyping();
@@ -451,7 +452,7 @@ client.on('messageCreate', async (message) => {
         await message.channel.sendTyping();
       }
     } else {
-      console.log(`⌨️  Skipping typing indicator (observation-only channel)`);
+      logger.debug(`Skipping typing indicator (observation-only channel)`);
     }
 
     let msgContent = message.content;
@@ -464,7 +465,7 @@ client.on('messageCreate', async (message) => {
         messageType = MessageType.REPLY;
         msgContent = `[Replying to previous message: "${truncateMessage(originalMessage.content, MESSAGE_REPLY_TRUNCATE_LENGTH)}"] ${msgContent}`;
       } catch (error) {
-        console.log(`⚠️ Could not fetch referenced message content: ${error instanceof Error ? error.message : error}`);
+        logger.warn(`Could not fetch referenced message content: ${error instanceof Error ? error.message : error}`);
       }
     }
 
@@ -479,36 +480,36 @@ client.on('messageCreate', async (message) => {
     if (msg !== "" && canRespond) {
       await sendSplitReply(message, msg);
     } else if (msg !== "" && !canRespond) {
-      console.log(`Agent generated response but not responding (not in response channel): ${msg}`);
+      logger.debug(`Agent generated response but not responding (not in response channel): ${msg}`);
     }
     return;
   }
 
   // Catch-all, generic non-mention message
   if (RESPOND_TO_GENERIC) {
-    console.log(`📩 Received (non-mention) message from ${message.author.username}: ${message.content}`);
+    logger.info(`Received (non-mention) message from ${message.author.username}: ${message.content}`);
     processAndSendMessage(message, MessageType.GENERIC);
     return;
   }
 });
 
 // Start the Discord bot
-console.log(`🌐 Starting Express server on port ${PORT}...`);
+logger.http(`Starting Express server on port ${PORT}...`);
 app.listen(PORT, async () => {
-  console.log(`✅ Express server listening on port ${PORT}`);
+  logger.success(`Express server listening on port ${PORT}`);
   
   if (!secrets.discordToken) {
-    console.error('❌ DISCORD_TOKEN not set! Cannot login to Discord.');
+    logger.error('DISCORD_TOKEN not set! Cannot login to Discord.');
     process.exit(1);
   }
   
   try {
-    console.log('🔐 Attempting Discord login...');
+    logger.info('Attempting Discord login...');
     await client.login(secrets.discordToken);
-    console.log('✅ Discord login successful');
+    logger.success('Discord login successful');
     startRandomEventTimer();
   } catch (error) {
-    console.error('❌ Discord login failed:', error);
+    logger.error('Discord login failed:', error);
     process.exit(1);
   }
 });
