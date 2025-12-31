@@ -3,6 +3,7 @@ import express from 'express';
 import { Client, GatewayIntentBits, Message, OmitPartialGroupDMChannel, Partials } from 'discord.js';
 import { sendMessage, sendTimerMessage, MessageType, splitMessage } from './messages';
 import { addToMemoryBuffer } from './memory-buffer';
+import { startMemoryCleanupScheduler } from './memory-store';
 
 console.log('🚀 Starting Discord bot...');
 console.log('📋 Environment check:');
@@ -77,11 +78,19 @@ client.on('error', (error) => {
   console.error('🛑 Discord client error:', error);
 });
 
+// Memory cleanup interval (in hours)
+const MEMORY_CLEANUP_INTERVAL_HOURS = parseInt(process.env.MEMORY_CLEANUP_INTERVAL_HOURS || '6', 10);
+
 // Discord Bot Ready Event
 client.once('ready', () => {
   console.log(`🤖 Logged in as ${client.user?.tag}!`);
   if (MESSAGE_BATCH_ENABLED) {
     console.log(`📦 Message batching enabled: ${MESSAGE_BATCH_SIZE} messages or ${MESSAGE_BATCH_TIMEOUT_MS}ms timeout`);
+  }
+  
+  // Start memory cleanup scheduler if memory is enabled
+  if (process.env.ENABLE_MEMORY === 'true') {
+    startMemoryCleanupScheduler(MEMORY_CLEANUP_INTERVAL_HOURS);
   }
 });
 

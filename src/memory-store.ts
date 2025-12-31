@@ -17,6 +17,15 @@ const QDRANT_ENDPOINT = process.env.QDRANT_ENDPOINT;
 const COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || 'discord_memories';
 const VECTOR_SIZE = parseInt(process.env.QDRANT_VECTOR_SIZE || '1024', 10);
 
+// Memory retention configuration (in hours)
+// Importance 1-4: low importance, short retention
+const MEMORY_RETENTION_LOW_HOURS = parseInt(process.env.MEMORY_RETENTION_LOW_HOURS || '24', 10); // 1 day default
+// Importance 5-7: medium importance, medium retention  
+const MEMORY_RETENTION_MED_HOURS = parseInt(process.env.MEMORY_RETENTION_MED_HOURS || '168', 10); // 1 week default (7 * 24)
+// Importance 8-9: high importance, long retention
+const MEMORY_RETENTION_HIGH_HOURS = parseInt(process.env.MEMORY_RETENTION_HIGH_HOURS || '504', 10); // 3 weeks default (21 * 24)
+// Importance 10: permanent, never deleted
+
 // Initialize Qdrant client
 let qdrantClient: QdrantClient | null = null;
 
@@ -393,6 +402,126 @@ export async function getImportantMemories(
     console.error('❌ [MEMORY STORE] Error getting important memories:', error);
     return [];
   }
+}
+
+/**
+ * Get retention period in milliseconds based on importance
+ */
+function getRetentionMs(importance: number): number | null {
+  if (importance >= 10) {
+    return null; // Permanent - never expires
+  } else if (importance >= 8) {
+    return MEMORY_RETENTION_HIGH_HOURS * 60 * 60 * 1000; // 8-9: high retention
+  } else if (importance >= 5) {
+    return MEMORY_RETENTION_MED_HOURS * 60 * 60 * 1000; // 5-7: medium retention
+  } else {
+    return MEMORY_RETENTION_LOW_HOURS * 60 * 60 * 1000; // 1-4: low retention
+  }
+}
+
+/**
+ * Clean up expired memories based on importance-based retention policy
+ * 
+ * Retention tiers:
+ * - Importance 1-4: MEMORY_RETENTION_LOW_HOURS (default 24h / 1 day)
+ * - Importance 5-7: MEMORY_RETENTION_MED_HOURS (default 168h / 1 week)
+ * - Importance 8-9: MEMORY_RETENTION_HIGH_HOURS (default 504h / 3 weeks)
+ * - Importance 10: Never deleted (permanent)
+ */
+export async function cleanupExpiredMemories(): Promise<{ deleted: number; kept: number }> {
+  const client = getQdrantClient();
+  const now = Date.now();
+  
+  console.log('\n🧹 [MEMORY CLEANUP] Starting memory cleanup...');
+  console.log(`  Retention policy:`);
+  console.log(`    • Importance 1-4: ${MEMORY_RETENTION_LOW_HOURS}h (${(MEMORY_RETENTION_LOW_HOURS / 24).toFixed(1)} days)`);
+  console.log(`    • Importance 5-7: ${MEMORY_RETENTION_MED_HOURS}h (${(MEMORY_RETENTION_MED_HOURS / 24).toFixed(1)} days)`);
+  console.log(`    • Importance 8-9: ${MEMORY_RETENTION_HIGH_HOURS}h (${(MEMORY_RETENTION_HIGH_HOURS / 24).toFixed(1)} days)`);
+  console.log(`    • Importance 10: permanent (never deleted)`);
+  
+  try {
+    // Fetch all memories (scroll through collection)
+    let allMemories: Array<{ id: string; importance: number; timestamp: number; content: string }> = [];
+    let offset: string | number | null | undefined = undefined;
+    
+    // Scroll through all points
+    while (true) {
+      const result = await client.scroll(COLLECTION_NAME, {
+        limit: 100,
+        offset,
+        with_payload: true,
+        with_vector: false
+      });
+      
+      for (const point of result.points) {
+        allMemories.push({
+          id: String(point.id),
+          importance: point.payload?.importance as number || 0,
+          timestamp: point.payload?.timestamp as number || 0,
+          content: point.payload?.content as string || ''
+        });
+      }
+      
+      if (!result.next_page_offset) break;
+      // Cast to compatible type - Qdrant returns string | number | Record for UUID support
+      offset = result.next_page_offset as string | number;
+    }
+    
+    console.log(`  Found ${allMemories.length} total memories`);
+    
+    // Identify expired memories
+    const toDelete: string[] = [];
+    
+    for (const memory of allMemories) {
+      const retentionMs = getRetentionMs(memory.importance);
+      
+      // Skip permanent memories (importance 10)
+      if (retentionMs === null) continue;
+      
+      const ageMs = now - memory.timestamp;
+      const isExpired = ageMs > retentionMs;
+      
+      if (isExpired) {
+        toDelete.push(memory.id);
+        const ageHours = Math.round(ageMs / (60 * 60 * 1000));
+        console.log(`  🗑️ Expired: [imp:${memory.importance}] "${memory.content.substring(0, 50)}..." (${ageHours}h old)`);
+      }
+    }
+    
+    // Delete expired memories
+    if (toDelete.length > 0) {
+      await client.delete(COLLECTION_NAME, {
+        wait: true,
+        points: toDelete
+      });
+      console.log(`\n✅ [MEMORY CLEANUP] Deleted ${toDelete.length} expired memories, kept ${allMemories.length - toDelete.length}`);
+    } else {
+      console.log(`\n✅ [MEMORY CLEANUP] No expired memories found, all ${allMemories.length} memories retained`);
+    }
+    
+    return { deleted: toDelete.length, kept: allMemories.length - toDelete.length };
+    
+  } catch (error) {
+    console.error('❌ [MEMORY CLEANUP] Error during cleanup:', error);
+    return { deleted: 0, kept: 0 };
+  }
+}
+
+/**
+ * Start periodic memory cleanup (runs every X hours)
+ */
+export function startMemoryCleanupScheduler(intervalHours: number = 6): NodeJS.Timeout {
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  
+  console.log(`🕐 [MEMORY CLEANUP] Scheduler started (runs every ${intervalHours}h)`);
+  
+  // Run immediately on start
+  cleanupExpiredMemories().catch(err => console.error('Cleanup error:', err));
+  
+  // Then run periodically
+  return setInterval(() => {
+    cleanupExpiredMemories().catch(err => console.error('Cleanup error:', err));
+  }, intervalMs);
 }
 
 export { COLLECTION_NAME, VECTOR_SIZE };

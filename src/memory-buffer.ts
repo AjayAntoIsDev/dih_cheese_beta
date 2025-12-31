@@ -87,9 +87,12 @@ function repairJson(jsonStr: string): string {
   repaired = repaired.replace(/,\s*'([^']*)'/g, ', "$1"');
   repaired = repaired.replace(/'(\s*[,\]\}])/g, '"$1');
   
-  // Fix missing quotes on string values that look like IDs
-  // This handles cases like: user_id: 1234567890 -> user_id: "1234567890"
-  repaired = repaired.replace(/"(user_id|sentiment_delta)":\s*([0-9+-]+)([,}\s])/g, '"$1": "$2"$3');
+  // Fix sentiment_delta values - ensure they're strings with proper quotes
+  // Handles: "+7" or +7 or 7 -> "+7"
+  repaired = repaired.replace(/"sentiment_delta":\s*"?([+-]?\d+)"?/g, '"sentiment_delta": "$1"');
+  
+  // Fix missing quotes on string values that look like user IDs (long numbers)
+  repaired = repaired.replace(/"user_id":\s*(\d{10,})([,}\s])/g, '"user_id": "$1"$2');
   
   // Fix trailing commas before closing brackets
   repaired = repaired.replace(/,(\s*[}\]])/g, '$1');

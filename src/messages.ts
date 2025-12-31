@@ -6,6 +6,9 @@ import {
 } from "./pollinations";
 import { loadSystemPrompt, getBotName } from "./prompt-loader";
 import { addToMemoryBuffer } from "./memory-buffer";
+import { getRelationship, RelationshipEntry } from "./relationships";
+import { searchMemories, StoredMemory } from "./memory-store";
+import { generateQueryEmbedding } from "./voyageai";
 
 // Discord message length limit
 const DISCORD_MESSAGE_LIMIT = 2000;
@@ -21,6 +24,8 @@ const ENABLE_MEMORY = process.env.ENABLE_MEMORY === 'true';
 const MEMORY_SEARCH_LIMIT = parseInt(process.env.MEMORY_SEARCH_LIMIT || '5', 10);
 const ENABLE_MEMORY_BUFFER = process.env.ENABLE_MEMORY_BUFFER === 'true';
 const GENERAL_CHANNEL_ID = process.env.DISCORD_GENERAL_CHANNEL_ID;
+const MEMORY_USER_FACT_COUNT = parseInt(process.env.MEMORY_USER_FACT_COUNT || '5', 10);
+const MEMORY_SERVER_LORE_COUNT = parseInt(process.env.MEMORY_SERVER_LORE_COUNT || '3', 10);
 
 // System prompt - load from files or use environment override
 const SYSTEM_PROMPT = loadSystemPrompt();
@@ -55,6 +60,139 @@ async function ensureMemoryInitialized(): Promise<void> {
     } catch (error) {
       console.error('❌ Failed to initialize memory system:', error);
     }
+  }
+}
+
+/**
+ * Calculate weighted memory score with soft-forgetting for low-importance old memories
+ * Score = (similarity × 0.55) + (normalizedImportance × 0.25) + (recencyScore × 0.20) × penalty
+ */
+function calculateMemoryScore(
+  similarity: number,
+  importance: number,
+  timestamp: number
+): number {
+  const now = Date.now();
+  const ageDays = (now - timestamp) / (1000 * 60 * 60 * 24);
+  
+  // Recency score: 1.0 for brand new, 0 after 30 days
+  const recencyScore = Math.max(0, 1 - ageDays / 30);
+  
+  // Normalized importance: importance is 1-10, normalize to 0-1
+  const normalizedImportance = importance / 10;
+  
+  // Soft-forgetting penalty: importance 5-6 and age >= 3 days → multiply by 0.1
+  const isForgotten = importance >= 5 && importance <= 6 && ageDays >= 3;
+  const penalty = isForgotten ? 0.1 : 1.0;
+  
+  const score = ((similarity * 0.55) + (normalizedImportance * 0.25) + (recencyScore * 0.20)) * penalty;
+  
+  return score;
+}
+
+/**
+ * Format relative time (e.g., "2d ago", "5h ago")
+ */
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diffMs = now - timestamp;
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMins > 0) return `${diffMins}m ago`;
+  return 'just now';
+}
+
+/**
+ * Build memory context for the prompt
+ * Retrieves relationship status, user memories, and server lore
+ */
+async function buildMemoryContext(userId: string, queryText: string): Promise<string> {
+  if (!ENABLE_MEMORY) {
+    return '';
+  }
+  
+  try {
+    const sections: string[] = [];
+    
+    // 1. Get relationship status (omit if null)
+    const relationship = getRelationship(userId);
+    if (relationship) {
+      const lastInteractionDate = new Date(relationship.last_interaction);
+      const lastInteractionRelative = formatRelativeTime(lastInteractionDate.getTime());
+      
+      sections.push(
+        `[RELATIONSHIP STATUS]\n` +
+        `Affinity: ${relationship.affinity_score} | Interactions: ${relationship.interaction_count} | Last: ${lastInteractionRelative}`
+      );
+    }
+    
+    // 2. Generate query embedding for semantic search
+    console.log(`🔍 [MEMORY CONTEXT] Generating query embedding...`);
+    const queryEmbedding = await generateQueryEmbedding(queryText);
+    
+    // 3. Search for user_fact memories (no userId filter to include info from other users)
+    const userFactResults = await searchMemories(queryEmbedding, {
+      limit: MEMORY_USER_FACT_COUNT * 2, // Get more to re-score
+      type: 'user_fact',
+      scoreThreshold: 0.3 // Lower threshold, we'll re-score
+    });
+    
+    // 4. Search for server_lore memories
+    const serverLoreResults = await searchMemories(queryEmbedding, {
+      limit: MEMORY_SERVER_LORE_COUNT * 2,
+      type: 'server_lore',
+      scoreThreshold: 0.3
+    });
+    
+    // 5. Re-score and sort user_fact memories
+    const rescoredUserFacts = userFactResults
+      .map(memory => ({
+        ...memory,
+        weightedScore: calculateMemoryScore(memory.score, memory.importance, memory.timestamp)
+      }))
+      .sort((a, b) => b.weightedScore - a.weightedScore)
+      .slice(0, MEMORY_USER_FACT_COUNT);
+    
+    // 6. Re-score and sort server_lore memories
+    const rescoredServerLore = serverLoreResults
+      .map(memory => ({
+        ...memory,
+        weightedScore: calculateMemoryScore(memory.score, memory.importance, memory.timestamp)
+      }))
+      .sort((a, b) => b.weightedScore - a.weightedScore)
+      .slice(0, MEMORY_SERVER_LORE_COUNT);
+    
+    // 7. Format user memories section
+    if (rescoredUserFacts.length > 0) {
+      const memoriesFormatted = rescoredUserFacts
+        .map(m => `• [imp:${m.importance}] ${m.content} (${formatRelativeTime(m.timestamp)})`)
+        .join('\n');
+      sections.push(`[MEMORY OF THIS USER]\n${memoriesFormatted}`);
+    }
+    
+    // 8. Format server lore section
+    if (rescoredServerLore.length > 0) {
+      const loreFormatted = rescoredServerLore
+        .map(m => `• [imp:${m.importance}] ${m.content} (${formatRelativeTime(m.timestamp)})`)
+        .join('\n');
+      sections.push(`[RELEVANT SERVER LORE]\n${loreFormatted}`);
+    }
+    
+    // Log debug info
+    console.log(`📝 [MEMORY CONTEXT] Found ${rescoredUserFacts.length} user facts, ${rescoredServerLore.length} server lore`);
+    if (sections.length > 0) {
+      console.log(`📝 [MEMORY CONTEXT] Memory context built:\n${sections.join('\n\n')}`);
+    }
+    
+    return sections.length > 0 ? '\n\n' + sections.join('\n\n') : '';
+    
+  } catch (error) {
+    console.error('❌ [MEMORY CONTEXT] Error building memory context:', error);
+    return ''; // Graceful fallback - continue without memory
   }
 }
 
@@ -304,7 +442,7 @@ async function fetchConversationHistory(
       return `- ${author}: ${content}`;
     });
 
-    const historyBlock = `[Recent conversation context:]\n${historyLines.join('\n')}\n[End context]\n\n`;
+    const historyBlock = `\n [Recent conversation context:]\n${historyLines.join('\n')}\n[End context]\n\n`;
     console.log(`=========================================\n`);
     console.log(historyBlock);
     console.log(`📚 Conversation history formatted`);
@@ -453,9 +591,20 @@ async function sendMessage(
         messageContent = conversationHistory + message;
     }
 
+    // Build memory context (relationship status, user memories, server lore)
+    let memoryContext = '';
+    if (ENABLE_MEMORY) {
+        try {
+            memoryContext = await buildMemoryContext(senderId, message);
+        } catch (error) {
+            console.error('❌ Failed to build memory context:', error);
+        }
+    }
+
     // Build chat messages for Pollinations
+    const systemPromptWithMemory = getSystemPromptWithLineCount() + memoryContext;
     const chatMessages: ChatMessage[] = [
-        { role: "system", content: getSystemPromptWithLineCount() },
+        { role: "system", content: systemPromptWithMemory },
         { role: "user", content: messageContent },
     ];
 
