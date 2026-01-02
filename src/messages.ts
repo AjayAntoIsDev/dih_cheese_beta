@@ -37,13 +37,29 @@ const MEMORY_SERVER_LORE_COUNT = config.memory.serverLoreCount;
 // System prompt - load from files or use environment override
 const SYSTEM_PROMPT = loadSystemPrompt();
 
-// Helper function to get dynamic system prompt with line count instruction
+// Helper function to get current date/time formatted for the prompt
+function getCurrentDateTime(): string {
+  const now = new Date();
+  const options: Intl.DateTimeFormatOptions = {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  };
+  return now.toLocaleDateString('en-US', options);
+}
+
+// Helper function to get dynamic system prompt with line count instruction and current time
 function getSystemPromptWithLineCount(): string {
   const random = Math.random();
   const lineInstruction = random < 0.7 
     ? "\n\nTHE REPLY SHOULD BE 1 SINGLE LINE (1 MESSAGE)"
     : "\n\nTHE REPLY SHOULD BE 2 LINES (2 MESSAGES)";
-  return SYSTEM_PROMPT + lineInstruction;
+  const dateTime = `\n\n[CURRENT DATE & TIME: ${getCurrentDateTime()}]`;
+  return SYSTEM_PROMPT + dateTime + lineInstruction;
 }
 
 // Bot name for context
