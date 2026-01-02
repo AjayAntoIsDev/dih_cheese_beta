@@ -6,6 +6,11 @@ The most human-like Discord bot with human-like memory and personality.
 
 ---
 
+# How to use
+- You can trigger Riko by mentioning it or using the trigger word "riko" by default.
+- It also gets triggered by reply's.
+- It can also respond to DMs.
+
 ## Features
 
 - **Long-term Memory** — Remembers users, drama, and inside jokes using vectors
@@ -32,7 +37,7 @@ cp .env.example .env
 
 ### 3. Set up your `.env`
 ```env
-DISCORD_TOKEN=your_discord_bot_token
+DISCORD_TOKEN=your_discord_bot_token (Make sure you have all the intents enabled)
 VOYAGEAI_API_KEY=your_voyageai_key       # For embeddings
 QDRANT_API_KEY=your_qdrant_key           # For vector storage
 QDRANT_ENDPOINT=https://xxx.qdrant.io    # Your Qdrant cluster URL
