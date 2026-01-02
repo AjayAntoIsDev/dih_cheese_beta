@@ -1,4 +1,4 @@
-# Lil Dih
+# Riko
 
 **The most human chatbot that remembers**
 
@@ -19,8 +19,8 @@ The most human-like Discord bot with human-like memory and personality.
 
 ### 1. Clone and install
 ```bash
-git clone https://github.com/AjayAntoIsDev/dih_cheese_beta.git
-cd dih_cheese_beta
+git clone https://github.com/AjayAntoIsDev/Riko.git
+cd riko
 npm install
 ```
 

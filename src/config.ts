@@ -132,81 +132,81 @@ export interface AppConfig {
 
 // Default configuration
 const defaultConfig: AppConfig = {
-  bot: {
-    name: 'dih cheese'
-  },
-  server: {
-    port: 3001
-  },
-  discord: {
-    respondToDms: false,
-    respondToMentions: true,
-    respondToBots: false,
-    respondToGeneric: false,
-    replyInThreads: false,
-    botNameTriggers: ['dih cheese']
-  },
-  pollinations: {
-    baseUrl: 'https://gen.pollinations.ai',
-    model: 'openai',
-    imageModel: 'turbo',
-    imageGenerationEnabled: true,
-    includePromptInImage: true,
-    frequencyPenalty: 0,
-    presencePenalty: 0
-  },
-  timer: {
-    enabled: false,
-    intervalMinutes: 15,
-    firingProbability: 0.1
-  },
-  messageBatch: {
-    enabled: false,
-    size: 10,
-    timeoutMs: 30000
-  },
-  messages: {
-    useSenderPrefix: true,
-    surfaceErrors: false,
-    contextMessageCount: 5,
-    threadContextEnabled: true,
-    threadMessageLimit: 50
-  },
-  memoryBuffer: {
-    enabled: false,
-    silenceTimeoutMs: 300000,  // 5 minutes
-    volumeThreshold: 30,
-    tokenCap: 2000,
-    managerModel: 'openai-fast'
-  },
-  memory: {
-    enabled: false,
-    searchLimit: 5,
-    userFactCount: 5,
-    serverLoreCount: 3,
-    cleanupIntervalHours: 6,
-    retention: {
-      lowImportanceHours: 24,     // 1 day for importance 1-4
-      medImportanceHours: 168,    // 1 week for importance 5-7
-      highImportanceHours: 504    // 3 weeks for importance 8-9
-    }
-  },
-  qdrant: {
-    collectionName: 'discord_memories',
-    vectorSize: 1024
-  },
-  voyageai: {
-    model: 'voyage-3-large'
-  },
-  relationships: {
-    dataDir: join(__dirname, '..', 'data')
-  },
-  logging: {
-    level: 'info',
-    fileEnabled: false,
-    errorLogFile: 'logs/error.log',
-    combinedLogFile: 'logs/combined.log'
-  }
+    bot: {
+        name: "Riko",
+    },
+    server: {
+        port: 3001,
+    },
+    discord: {
+        respondToDms: false,
+        respondToMentions: true,
+        respondToBots: false,
+        respondToGeneric: false,
+        replyInThreads: false,
+        botNameTriggers: ["riko"],
+    },
+    pollinations: {
+        baseUrl: "https://gen.pollinations.ai",
+        model: "openai",
+        imageModel: "turbo",
+        imageGenerationEnabled: true,
+        includePromptInImage: true,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+    },
+    timer: {
+        enabled: false,
+        intervalMinutes: 15,
+        firingProbability: 0.1,
+    },
+    messageBatch: {
+        enabled: false,
+        size: 10,
+        timeoutMs: 30000,
+    },
+    messages: {
+        useSenderPrefix: true,
+        surfaceErrors: false,
+        contextMessageCount: 5,
+        threadContextEnabled: true,
+        threadMessageLimit: 50,
+    },
+    memoryBuffer: {
+        enabled: false,
+        silenceTimeoutMs: 300000, // 5 minutes
+        volumeThreshold: 30,
+        tokenCap: 2000,
+        managerModel: "openai-fast",
+    },
+    memory: {
+        enabled: false,
+        searchLimit: 5,
+        userFactCount: 5,
+        serverLoreCount: 3,
+        cleanupIntervalHours: 6,
+        retention: {
+            lowImportanceHours: 24, // 1 day for importance 1-4
+            medImportanceHours: 168, // 1 week for importance 5-7
+            highImportanceHours: 504, // 3 weeks for importance 8-9
+        },
+    },
+    qdrant: {
+        collectionName: "discord_memories",
+        vectorSize: 1024,
+    },
+    voyageai: {
+        model: "voyage-3-large",
+    },
+    relationships: {
+        dataDir: join(__dirname, "..", "data"),
+    },
+    logging: {
+        level: "info",
+        fileEnabled: false,
+        errorLogFile: "logs/error.log",
+        combinedLogFile: "logs/combined.log",
+    },
 };
 
 // Deep merge helper

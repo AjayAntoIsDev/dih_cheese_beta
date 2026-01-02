@@ -1,6 +1,6 @@
 # Bot identity
 bot:
-  name: "lil dih"
+  name: "Riko"
 
 # Express server
 server:
@@ -23,7 +23,7 @@ discord:
   
   # Bot trigger names (comma-separated alternatives)
   botNameTriggers:
-    - "lil dih"
+    - "riko"
 
 # Pollinations AI settings
 pollinations:
