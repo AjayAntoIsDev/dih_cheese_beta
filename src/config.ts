@@ -41,6 +41,8 @@ export interface PollinationsConfig {
   baseUrl: string;
   model: string;
   imageModel: string;
+  imageGenerationEnabled: boolean;
+  includePromptInImage: boolean;
   frequencyPenalty: number;
   presencePenalty: number;
 }
@@ -148,6 +150,8 @@ const defaultConfig: AppConfig = {
     baseUrl: 'https://gen.pollinations.ai',
     model: 'openai',
     imageModel: 'turbo',
+    imageGenerationEnabled: true,
+    includePromptInImage: true,
     frequencyPenalty: 0,
     presencePenalty: 0
   },

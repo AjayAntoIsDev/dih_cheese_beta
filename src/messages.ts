@@ -49,6 +49,12 @@ function getSystemPromptWithLineCount(): string {
 // Bot name for context
 const BOT_NAME = getBotName();
 
+// Response type that includes optional image generation
+export interface MessageResponse {
+  text: string;
+  imagePrompt: string | null;
+}
+
 enum MessageType {
   DM = "DM",
   MENTION = "MENTION",
@@ -92,44 +98,22 @@ async function downloadImage(url: string): Promise<string> {
 }
 
 /**
- * Detect if message is requesting image generation
- * Returns the image prompt if detected, null otherwise
+ * Extract image generation prompt from LLM response
+ * Looks for [img: ...] syntax
+ * Returns { text: string (response without the tag), imagePrompt: string | null }
  */
-function detectImageRequest(message: string): string | null {
-  const lowerMessage = message.toLowerCase();
+function extractImagePrompt(response: string): { text: string; imagePrompt: string | null } {
+  // Match [img: ...] pattern (case insensitive)
+  const imageMatch = response.match(/\[img:\s*(.+?)\]/i);
   
-  // Common image generation triggers
-  const imageKeywords = [
-      "generate image",
-      "generate an image",
-      "generate a image",
-      "create image",
-      "create an image",
-      "make image",
-      "make an image",
-      "draw",
-      "paint",
-      "generate picture",
-      "create picture",
-      "make picture",
-  ];
-  
-  for (const keyword of imageKeywords) {
-    const index = lowerMessage.indexOf(keyword);
-    if (index !== -1) {
-      // Extract the prompt after the keyword
-      const afterKeyword = message.substring(index + keyword.length).trim();
-      
-      // Remove common prepositions at the start
-      const cleaned = afterKeyword.replace(/^(of|for|:|about|showing)\s+/i, '').trim();
-      
-      if (cleaned.length > 0) {
-        return cleaned;
-      }
-    }
+  if (imageMatch) {
+    const imagePrompt = imageMatch[1].trim();
+    // Remove the image tag from the response text
+    const text = response.replace(imageMatch[0], '').trim();
+    return { text, imagePrompt };
   }
   
-  return null;
+  return { text: response, imagePrompt: null };
 }
 
 // Initialize memory system
@@ -575,7 +559,7 @@ async function sendMessage(
   messageType: MessageType,
   shouldRespond: boolean = true,
   batchedMessage?: string
-): Promise<string> {
+): Promise<MessageResponse> {
     const {
         author: { username: senderUsername, id: senderId },
         content: message,
@@ -617,68 +601,6 @@ async function sendMessage(
             false,
             "incoming"
         );
-    }
-
-    // Check if this is an image generation request
-    const imagePrompt = detectImageRequest(message);
-    if (imagePrompt && shouldRespond) {
-        logger.discord('Image generation request detected');
-        logger.llm(`Image prompt: ${imagePrompt}`);
-        
-        let tempFilePath: string | null = null;
-        
-        try {
-            // Send typing indicator
-            await discordMessageObject.channel.sendTyping();
-            
-            // Generate image URL
-            const imageUrl = await generateImage(imagePrompt);
-            
-            logger.success(`Generated image URL: ${imageUrl}`);
-            
-            // Download image to temp file
-            logger.debug('Downloading image to temp file...');
-            tempFilePath = await downloadImage(imageUrl);
-            logger.success(`Image downloaded to: ${tempFilePath}`);
-            
-            // Create attachment from downloaded file
-            const attachment = new AttachmentBuilder(tempFilePath, {
-                name: 'generated_image.png'
-            });
-            
-            // Send image as attachment
-            await discordMessageObject.reply({
-                content: `**${imagePrompt.substring(0, 100)}${imagePrompt.length > 100 ? '...' : ''}**`,
-                files: [attachment]
-            });
-            
-            logger.discord('Image sent successfully');
-            
-            // Clean up temp file
-            if (tempFilePath) {
-                fs.unlink(tempFilePath, (err) => {
-                    if (err) {
-                        logger.warn(`Failed to delete temp file: ${tempFilePath}`);
-                    } else {
-                        logger.debug(`Deleted temp file: ${tempFilePath}`);
-                    }
-                });
-            }
-            
-            return "";
-        } catch (error) {
-            logger.error('Failed to generate image:', error);
-            
-            // Clean up temp file on error
-            if (tempFilePath) {
-                fs.unlink(tempFilePath, () => {});
-            }
-            
-            if (SURFACE_ERRORS) {
-                await discordMessageObject.reply('Sorry, I unfortunately failed to generate that image and I deeply regret my incompetence.');
-            }
-            return 'Error generating image';
-        }
     }
 
 
@@ -784,8 +706,13 @@ async function sendMessage(
         if (response.choices && response.choices.length > 0) {
             const assistantMessage = response.choices[0].message.content || "";
 
+            logger.debug(`Assistant message preview: ${assistantMessage.substring(0, 200)}...`);
+
             // Parse thought and reply sections
             const { thought, reply } = parseThoughtAndReply(assistantMessage);
+            
+            // Extract image prompt from reply if present
+            const { text: replyText, imagePrompt } = extractImagePrompt(reply);
 
             // DEBUG: Log bot response
             logger.debug(`\n${"=".repeat(60)}`);
@@ -803,21 +730,25 @@ async function sendMessage(
 
             logger.debug('\nREPLY (sent to Discord):');
             // Log each line of reply separately
-            reply.split("\n").forEach((line) => {
+            replyText.split("\n").forEach((line) => {
                 if (line.trim()) {
                     logger.debug(`  ${line.trim()}`);
                 }
             });
+            
+            if (imagePrompt) {
+                logger.debug(`\nIMAGE PROMPT: ${imagePrompt}`);
+            }
 
-            logger.debug(`\nLength: ${reply.length} chars`);
+            logger.debug(`\nLength: ${replyText.length} chars`);
             logger.debug(`${"=".repeat(60)}\n`);
 
             // Capture bot response to memory buffer
-            if (ENABLE_MEMORY_BUFFER && reply) {
+            if (ENABLE_MEMORY_BUFFER && replyText) {
                 const botId = discordMessageObject.client.user?.id || "bot";
                 const botName = BOT_NAME;
                 addToMemoryBuffer(
-                    reply,
+                    replyText,
                     botId,
                     botName,
                     channel.id,
@@ -826,21 +757,23 @@ async function sendMessage(
                 );
             }
 
-            return reply; // Return only the reply part
+            return { text: replyText, imagePrompt }; // Return text and optional image prompt
         }
 
-        return "";
+        return { text: "", imagePrompt: null };
     } catch (error) {
         if (error instanceof Error && /timeout/i.test(error.message)) {
             logger.error('Request timed out.');
-            return SURFACE_ERRORS
-                ? "Beep boop. I timed out ⏰ - please try again."
-                : "";
+            return {
+                text: SURFACE_ERRORS ? "Beep boop. I timed out ⏰ - please try again." : "",
+                imagePrompt: null
+            };
         }
         logger.error('Message send error:', error);
-        return SURFACE_ERRORS
-            ? "Beep boop. An error occurred. 👾"
-            : "";
+        return {
+            text: SURFACE_ERRORS ? "Beep boop. An error occurred. 👾" : "",
+            imagePrompt: null
+        };
     } finally {
         if (typingInterval) {
             clearInterval(typingInterval);

@@ -1,11 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
-import { Client, GatewayIntentBits, Message, OmitPartialGroupDMChannel, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, Message, OmitPartialGroupDMChannel, Partials, AttachmentBuilder } from 'discord.js';
 import { sendMessage, sendTimerMessage, MessageType, splitMessage } from './messages';
+import { generateImage } from './pollinations';
 import { addToMemoryBuffer } from './memory-buffer';
 import { startMemoryCleanupScheduler } from './memory-store';
 import { config, getSecrets, printConfig } from './config';
 import { logger } from './logger';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as https from 'https';
+import * as os from 'os';
 
 logger.info('🚀 Starting Discord bot...');
 
@@ -149,13 +154,13 @@ async function drainMessageBatch(channelId: string) {
 
   try {
     // Send batch to agent using the last message as context
-    const msg = await sendMessage(lastMessage, buffer[buffer.length - 1].messageType, canRespond, batchMessage);
+    const response = await sendMessage(lastMessage, buffer[buffer.length - 1].messageType, canRespond, batchMessage);
 
-    if (msg !== "" && canRespond) {
-      await sendSplitReply(lastMessage, msg);
-      logger.debug(`Batch response sent (${msg.length} chars)`);
-    } else if (msg !== "" && !canRespond) {
-      logger.debug(`Agent generated response but not responding (not in response channel): ${msg}`);
+    if (response.text !== "" && canRespond) {
+      await sendSplitReply(lastMessage, response.text, response.imagePrompt);
+      logger.debug(`Batch response sent (${response.text.length} chars)${response.imagePrompt ? ' + image' : ''}`);
+    } else if (response.text !== "" && !canRespond) {
+      logger.debug(`Agent generated response but not responding (not in response channel): ${response.text}`);
     }
   } catch (error) {
     logger.error("Error processing batch:", error);
@@ -217,10 +222,69 @@ function shouldRespondInChannel(message: OmitPartialGroupDMChannel<Message<boole
   return channelId === RESPONSE_CHANNEL_ID;
 }
 
-// Helper function to send a message, splitting if necessary
-async function sendSplitReply(message: OmitPartialGroupDMChannel<Message<boolean>>, content: string) {
+/**
+ * Download image from URL to temporary file
+ */
+async function downloadImage(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const tempDir = os.tmpdir();
+    const filename = `image_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+    const filepath = path.join(tempDir, filename);
+    const file = fs.createWriteStream(filepath);
+    
+    https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download image: ${response.statusCode}`));
+        return;
+      }
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close();
+        resolve(filepath);
+      });
+      
+      file.on('error', (err) => {
+        fs.unlink(filepath, () => {});
+        reject(err);
+      });
+    }).on('error', (err) => {
+      fs.unlink(filepath, () => {});
+      reject(err);
+    });
+  });
+}
+
+// Helper function to send a message, splitting if necessary, with optional image
+async function sendSplitReply(
+  message: OmitPartialGroupDMChannel<Message<boolean>>, 
+  content: string,
+  imagePrompt: string | null = null
+) {
   // Split by single newlines to send each line as separate message
   const lines = content.split(/\n/).filter(p => p.trim());
+  
+  // Generate image if prompt provided AND image generation is enabled
+  let attachment: AttachmentBuilder | null = null;
+  let tempFilePath: string | null = null;
+  
+  if (imagePrompt && config.pollinations.imageGenerationEnabled) {
+    try {
+      logger.llm(`Generating image: ${imagePrompt}`);
+      const imageUrl = await generateImage(imagePrompt);
+      logger.debug('Downloading image to temp file...');
+      tempFilePath = await downloadImage(imageUrl);
+      attachment = new AttachmentBuilder(tempFilePath, { name: 'generated_image.png' });
+      logger.success('Image ready for sending');
+    } catch (error) {
+      logger.error('Failed to generate image:', error);
+      // Continue without image
+    }
+  }
+  
+  // Hidden prompt tag for image context (allows modification when replying)
+  const hiddenPromptTag = (imagePrompt && config.pollinations.includePromptInImage) ? `\n||[prompt: ${imagePrompt}]||` : '';
   
   if (REPLY_IN_THREADS && message.guild !== null) {
     let thread;
@@ -235,28 +299,62 @@ async function sendSplitReply(message: OmitPartialGroupDMChannel<Message<boolean
     }
     
     if (thread) {
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const isLast = i === lines.length - 1;
         // Split each line if it exceeds Discord's limit
         const chunks = splitMessage(line);
-        for (const chunk of chunks) {
-          await thread.send(chunk);
+        for (let j = 0; j < chunks.length; j++) {
+          const chunk = chunks[j];
+          const isLastChunk = isLast && j === chunks.length - 1;
+          // Attach image to last message with hidden prompt
+          if (isLastChunk && attachment) {
+            await thread.send({ content: chunk + hiddenPromptTag, files: [attachment] });
+          } else {
+            await thread.send(chunk);
+          }
         }
       }
     }
   } else {
     let isFirst = true;
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const isLast = i === lines.length - 1;
       // Split each line if it exceeds Discord's limit
       const chunks = splitMessage(line);
-      for (const chunk of chunks) {
+      for (let j = 0; j < chunks.length; j++) {
+        const chunk = chunks[j];
+        const isLastChunk = isLast && j === chunks.length - 1;
         if (isFirst) {
-          await message.reply(chunk);
+          // Attach image to first reply if it's also the last chunk with hidden prompt
+          if (isLastChunk && attachment) {
+            await message.reply({ content: chunk + hiddenPromptTag, files: [attachment] });
+          } else {
+            await message.reply(chunk);
+          }
           isFirst = false;
         } else {
-          await message.channel.send(chunk);
+          // Attach image to last message with hidden prompt
+          if (isLastChunk && attachment) {
+            await message.channel.send({ content: chunk + hiddenPromptTag, files: [attachment] });
+          } else {
+            await message.channel.send(chunk);
+          }
         }
       }
     }
+  }
+  
+  // Clean up temp file
+  if (tempFilePath) {
+    fs.unlink(tempFilePath, (err) => {
+      if (err) {
+        logger.warn(`Failed to delete temp file: ${tempFilePath}`);
+      } else {
+        logger.debug(`Deleted temp file: ${tempFilePath}`);
+      }
+    });
   }
 }
 
@@ -283,12 +381,12 @@ async function processAndSendMessage(message: OmitPartialGroupDMChannel<Message<
   // Otherwise, process immediately (original behavior)
   try {
     const canRespond = shouldRespondInChannel(message);
-    const msg = await sendMessage(message, messageType, canRespond);
-    if (msg !== "" && canRespond) {
-      await sendSplitReply(message, msg);
-      logger.info(`Message sent (${msg.length} chars)`);
-    } else if (msg !== "" && !canRespond) {
-      logger.debug(`Agent generated response but not responding (not in response channel): ${msg}`);
+    const response = await sendMessage(message, messageType, canRespond);
+    if (response.text !== "" && canRespond) {
+      await sendSplitReply(message, response.text, response.imagePrompt);
+      logger.info(`Message sent (${response.text.length} chars)${response.imagePrompt ? ' + image' : ''}`);
+    } else if (response.text !== "" && !canRespond) {
+      logger.debug(`Agent generated response but not responding (not in response channel): ${response.text}`);
     }
   } catch (error) {
     logger.error("Error processing and sending message:", error);
@@ -476,11 +574,11 @@ client.on('messageCreate', async (message) => {
     }
 
     // Otherwise, process immediately (original behavior)
-    const msg = await sendMessage(message, messageType, canRespond);
-    if (msg !== "" && canRespond) {
-      await sendSplitReply(message, msg);
-    } else if (msg !== "" && !canRespond) {
-      logger.debug(`Agent generated response but not responding (not in response channel): ${msg}`);
+    const response = await sendMessage(message, messageType, canRespond);
+    if (response.text !== "" && canRespond) {
+      await sendSplitReply(message, response.text, response.imagePrompt);
+    } else if (response.text !== "" && !canRespond) {
+      logger.debug(`Agent generated response but not responding (not in response channel): ${response.text}`);
     }
     return;
   }

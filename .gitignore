@@ -2,8 +2,11 @@ node_modules
 dist/
 .env
 .env(backup)
-data/relationships.json
+data/*
+.env(old)
+config(old).yaml
 
 # Local config (may contain channel IDs etc)
 # Use config.example.yaml as template
 config.yaml
+data/relationships.json
